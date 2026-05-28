@@ -17,7 +17,7 @@ EVENT_TO_SIGNAL = {
     "PreToolUse": "working",
     "PostToolUse": "tool_done",
     "PermissionRequest": "permission",
-    "Stop": "turn_end",
+    "Stop": "done",
     "SessionEnd": "session_end",
 }
 

@@ -20,7 +20,7 @@ EVENT_TO_SIGNAL = {
     "PreCompact": "working",
     "SubagentStart": "working",
     "SubagentStop": "tool_done",
-    "Stop": "turn_end",
+    "Stop": "done",
     "Notification": "attention",
     "PermissionRequest": "permission",
     "SessionEnd": "session_end",

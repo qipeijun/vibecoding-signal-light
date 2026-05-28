@@ -1,16 +1,18 @@
-"""Command line interface for AI agent signal lights."""
+"""Command line interface for AI agent status lights."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import subprocess
 import sys
+import time
+from pathlib import Path
 from typing import Sequence
 
 from signal_light.agent_signals import SIGNALS, AgentSignal, Frame
-from signal_light.hardware import LightMapping, SignalLight, SignalLightError
-from signal_light.runtime import apply_session_signal, apply_signal, clear_session_state, read_session_snapshot, run_worker
+from signal_light.runtime import SignalLightError, apply_session_signal, apply_signal, clear_session_state, read_session_snapshot
 
 
 HOOK_CONTROL_SIGNALS = {"turn_end"}
@@ -30,35 +32,32 @@ class DryRunLight:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="signal-light",
-        description="Play AI agent status patterns on a red/yellow/green traffic signal model.",
+        description="Play AI agent status patterns on the macOS signal-light app.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
     play = subparsers.add_parser("play", help="play one lamp-language signal")
     play.add_argument("signal", choices=sorted(SIGNALS), help="signal name")
-    play.add_argument("--dry-run", action="store_true", help="print GPIO states instead of touching hardware")
+    play.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
     play.add_argument("--speed", type=float, default=1.0, help="delay multiplier; lower is faster")
     play.add_argument("--quiet", action="store_true", help="suppress non-error output")
 
     subparsers.add_parser("list", help="list available lamp-language signals")
     subparsers.add_parser("status", help="show aggregated Codex session signal state")
+    subparsers.add_parser("app", help="start the native macOS signal-light app")
 
     hook = subparsers.add_parser("codex-hook", help="read a Codex hook event and play the matching signal")
     hook.add_argument("event", nargs="?", help="Codex hook event name, for example Stop or PermissionRequest")
     hook.add_argument("--event", dest="event_option", help="Codex hook event name")
-    hook.add_argument("--dry-run", action="store_true", help="print GPIO states instead of touching hardware")
+    hook.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
 
     cc_hook = subparsers.add_parser("claude-code-hook", help="read a Claude Code hook event and play the matching signal")
     cc_hook.add_argument("event", nargs="?", help="Claude Code hook event name, for example Stop or PreToolUse")
     cc_hook.add_argument("--event", dest="event_option", help="Claude Code hook event name")
-    cc_hook.add_argument("--dry-run", action="store_true", help="print GPIO states instead of touching hardware")
+    cc_hook.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
 
-    worker = subparsers.add_parser("worker", help=argparse.SUPPRESS)
-    worker.add_argument("signal", choices=sorted(name for name, signal in SIGNALS.items() if signal.repeat))
-    worker.add_argument("--speed", type=float, default=1.0)
-
-    test = subparsers.add_parser("test", help="run a quick red/yellow/green hardware test")
-    test.add_argument("--dry-run", action="store_true", help="print GPIO states instead of touching hardware")
+    test = subparsers.add_parser("test", help="run a quick macOS UI status preview")
+    test.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
 
     return parser
 
@@ -93,10 +92,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "status":
         print(json.dumps(read_session_snapshot(), ensure_ascii=False, indent=2))
         return 0
+    if args.command == "app":
+        return run_app()
     if args.command == "test":
         return run_test(dry_run=args.dry_run)
-    if args.command == "worker":
-        return run_worker(args.signal, speed=args.speed)
 
     parser.print_help()
     return 2
@@ -196,13 +195,37 @@ def run_test(*, dry_run: bool = False) -> int:
         if dry_run:
             test_signal.play(DryRunLight())
         else:
-            with SignalLight(LightMapping.from_env(os.environ)) as light:
-                test_signal.play(light)
+            for signal_name in ("permission", "attention", "working", "idle"):
+                apply_signal(SIGNALS[signal_name])
+                time.sleep(0.8)
     except SignalLightError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     return 0
+
+
+def run_app() -> int:
+    root_dir = Path(__file__).resolve().parents[1]
+    bundled_app_bin = root_dir.parent.parent / "MacOS" / "signal-light-mac"
+    release_bin = root_dir / ".build" / "release" / "signal-light-mac"
+    command = _app_command(root_dir, bundled_app_bin, release_bin)
+    try:
+        return subprocess.call(command)
+    except FileNotFoundError:
+        print("Swift is not installed or not available on PATH.", file=sys.stderr)
+        return 1
+
+
+def _app_command(root_dir: Path, bundled_app_bin: Path, release_bin: Path) -> list[str]:
+    override = os.environ.get("SIGNAL_LIGHT_APP_BIN")
+    if override:
+        return [override]
+    if bundled_app_bin.exists():
+        return [str(bundled_app_bin)]
+    if release_bin.exists():
+        return [str(release_bin)]
+    return ["swift", "run", "--package-path", str(root_dir), "signal-light-mac"]
 
 
 if __name__ == "__main__":

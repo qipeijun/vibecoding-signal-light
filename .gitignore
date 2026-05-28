@@ -12,6 +12,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Swift Package Manager
+.build/
+
 # Virtual environments
 .venv
 venv/

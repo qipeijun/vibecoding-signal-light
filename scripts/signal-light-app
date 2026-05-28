@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RELEASE_BIN="$ROOT_DIR/.build/release/signal-light-mac"
+
+if [[ -x "$RELEASE_BIN" ]]; then
+  exec "$RELEASE_BIN"
+fi
+
+exec swift run --package-path "$ROOT_DIR" signal-light-mac

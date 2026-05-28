@@ -1,15 +1,15 @@
 [project]
 name = "signal-light"
 version = "0.1.0"
-description = "Physical traffic-light status display for AI coding agents."
+description = "Native macOS traffic-light status utility for AI coding agents."
 readme = "README.md"
 requires-python = ">=3.11"
 keywords = [
     "ai-agent",
     "codex",
     "claude-code",
-    "gpio",
-    "mcp2221a",
+    "macos",
+    "appkit",
     "status-light",
 ]
 classifiers = [
@@ -19,11 +19,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Topic :: Software Development",
-    "Topic :: System :: Hardware",
+    "Topic :: Desktop Environment",
 ]
-dependencies = [
-    "EasyMCP2221>=1.8.0",
-]
+dependencies = []
 
 [dependency-groups]
 dev = [

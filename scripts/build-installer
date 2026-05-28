@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export COPYFILE_DISABLE=1
+
+APP_PATH="$ROOT_DIR/dist/build/Signal Light.app"
+PKG_ROOT="$ROOT_DIR/dist/pkg-root"
+PKG_PATH="$ROOT_DIR/dist/Signal Light Installer.pkg"
+INSTALL_BIN_DIR="$PKG_ROOT/usr/local/bin"
+PKG_SCRIPTS_DIR="$ROOT_DIR/dist/pkg-scripts"
+
+"$ROOT_DIR/scripts/build-signal-light-app" >/dev/null
+
+rm -rf "$PKG_ROOT" "$PKG_SCRIPTS_DIR" "$PKG_PATH"
+mkdir -p "$PKG_ROOT/Applications" "$INSTALL_BIN_DIR"
+cp -R "$APP_PATH" "$PKG_ROOT/Applications/Signal Light.app"
+
+cat > "$INSTALL_BIN_DIR/signal-light" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "/Applications/Signal Light.app/Contents/Resources/bin/signal-light" "$@"
+SCRIPT
+
+cat > "$INSTALL_BIN_DIR/codex-signal-hook" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "/Applications/Signal Light.app/Contents/Resources/bin/codex-signal-hook" "$@"
+SCRIPT
+
+cat > "$INSTALL_BIN_DIR/claude-code-signal-hook" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "/Applications/Signal Light.app/Contents/Resources/bin/claude-code-signal-hook" "$@"
+SCRIPT
+
+cat > "$INSTALL_BIN_DIR/signal-light-uninstall" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "/Applications/Signal Light.app/Contents/Resources/bin/signal-light" uninstall "$@"
+SCRIPT
+
+chmod +x "$INSTALL_BIN_DIR/signal-light" \
+  "$INSTALL_BIN_DIR/codex-signal-hook" \
+  "$INSTALL_BIN_DIR/claude-code-signal-hook" \
+  "$INSTALL_BIN_DIR/signal-light-uninstall"
+
+xattr -cr "$PKG_ROOT" 2>/dev/null || true
+xattr -rd com.apple.provenance "$PKG_ROOT" 2>/dev/null || true
+find "$PKG_ROOT" -name '._*' -delete
+
+mkdir -p "$PKG_SCRIPTS_DIR"
+cat > "$PKG_SCRIPTS_DIR/postinstall" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+/usr/bin/open "/Applications/Signal Light.app" || true
+exit 0
+SCRIPT
+chmod +x "$PKG_SCRIPTS_DIR/postinstall"
+
+pkgbuild \
+  --root "$PKG_ROOT" \
+  --scripts "$PKG_SCRIPTS_DIR" \
+  --identifier "com.vibecoding.signal-light" \
+  --version "0.1.0" \
+  --install-location "/" \
+  "$PKG_PATH"
+
+echo "$PKG_PATH"

@@ -1,11 +1,9 @@
-"""Runtime process management for persistent signal-light states."""
+"""Runtime state management for the macOS signal-light app."""
 
 from __future__ import annotations
 
 import json
 import os
-import signal
-import subprocess
 import sys
 import time
 from contextlib import contextmanager
@@ -13,34 +11,30 @@ from pathlib import Path
 from typing import Iterator
 
 from signal_light.agent_signals import AgentSignal, SIGNALS
-from signal_light.hardware import LightMapping, SignalLight, SignalLightError
 
 
 STATE_DIR = Path(os.environ.get("SIGNAL_LIGHT_STATE_DIR", "/private/tmp/signal-light"))
-PID_FILE = STATE_DIR / "worker.json"
-LOG_FILE = STATE_DIR / "worker.log"
 SESSION_FILE = STATE_DIR / "sessions.json"
+CURRENT_STATUS_FILE = STATE_DIR / "current_status.json"
 LOCK_FILE = STATE_DIR / "state.lock"
 SESSION_TTL_SECONDS = int(os.environ.get("SIGNAL_LIGHT_SESSION_TTL_SECONDS", "86400"))
+STATUS_CHANGED_NOTIFICATION = b"com.vibecoding.signal-light.status-changed"
 
 RED_SIGNALS = {"permission", "blocked"}
-YELLOW_SIGNALS = {"attention", "done"}
+YELLOW_SIGNALS = {"attention"}
 WORKING_SIGNALS = {"thinking", "working", "tool_done"}
 SESSION_END_SIGNALS = {"session_end", "off"}
 TURN_END_SIGNALS = {"turn_end"}
 
 
-def apply_signal(signal: AgentSignal, *, speed: float = 1.0) -> None:
-    """Apply a signal as the current persistent status."""
-    if signal.repeat:
-        if _worker_matches(signal.name):
-            return
-        stop_worker()
-        start_worker(signal.name, speed=speed)
-        return
+class SignalLightError(RuntimeError):
+    """Raised when the signal-light state cannot be updated."""
 
-    stop_worker()
-    _play_with_retries(signal, speed=speed)
+
+def apply_signal(signal: AgentSignal, *, speed: float = 1.0) -> None:
+    """Write a signal as the current persistent macOS UI status."""
+    del speed
+    write_current_status(signal.name)
 
 
 def apply_session_signal(session_key: str, signal_name: str, *, speed: float = 1.0) -> str:
@@ -76,6 +70,20 @@ def clear_session_state() -> None:
         _write_session_state({"sessions": {}})
 
 
+def write_current_status(signal_name: str, *, updated_at: float | None = None) -> None:
+    """Persist the current aggregate state for the Swift status-light app."""
+    if signal_name not in SIGNALS:
+        raise SignalLightError(f"Unknown signal: {signal_name}")
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "aggregate": signal_name,
+        "updated_at": time.time() if updated_at is None else updated_at,
+    }
+    _atomic_write_json(CURRENT_STATUS_FILE, payload)
+    _post_status_changed_notification()
+
+
 def aggregate_sessions(sessions: dict[str, object]) -> str:
     signals = []
     for value in sessions.values():
@@ -105,16 +113,6 @@ def read_session_snapshot() -> dict[str, object]:
         "aggregate": aggregate,
         "sessions": sessions,
     }
-
-
-def run_worker(signal_name: str, *, speed: float = 1.0) -> int:
-    signal_to_run = SIGNALS[signal_name]
-    if not signal_to_run.repeat:
-        raise SignalLightError(f"Signal {signal_name} is not a repeating signal.")
-
-    with SignalLight(LightMapping.from_env(os.environ)) as light:
-        signal_to_run.play_forever(light, speed=speed)
-    return 0
 
 
 @contextmanager
@@ -148,7 +146,48 @@ def _read_session_state() -> dict[str, object]:
 
 def _write_session_state(state: dict[str, object]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    SESSION_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+    _atomic_write_json(SESSION_FILE, state)
+
+
+def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        tmp_path.replace(path)
+    except OSError as exc:
+        raise SignalLightError(f"Failed to write signal-light state {path}: {exc}") from exc
+
+
+def _post_status_changed_notification() -> None:
+    if sys.platform != "darwin":
+        return
+
+    try:
+        import ctypes
+
+        core_foundation = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        core_foundation.CFNotificationCenterGetDarwinNotifyCenter.restype = ctypes.c_void_p
+        core_foundation.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        core_foundation.CFStringCreateWithCString.restype = ctypes.c_void_p
+        core_foundation.CFNotificationCenterPostNotification.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_bool,
+        ]
+        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+        notification_name = core_foundation.CFStringCreateWithCString(None, STATUS_CHANGED_NOTIFICATION, 0x08000100)
+        if not notification_name:
+            return
+        try:
+            center = core_foundation.CFNotificationCenterGetDarwinNotifyCenter()
+            core_foundation.CFNotificationCenterPostNotification(center, notification_name, None, None, True)
+        finally:
+            core_foundation.CFRelease(notification_name)
+    except Exception:
+        return
 
 
 def _prune_sessions(sessions: dict[str, object], now: float) -> None:
@@ -163,130 +202,3 @@ def _prune_sessions(sessions: dict[str, object], now: float) -> None:
 
     for session_key in expired:
         sessions.pop(session_key, None)
-
-
-def start_worker(signal_name: str, *, speed: float = 1.0) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-m",
-        "signal_light",
-        "worker",
-        signal_name,
-        "--speed",
-        str(speed),
-    ]
-    log = LOG_FILE.open("ab")
-    try:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=log,
-            cwd=Path(__file__).resolve().parents[1],
-            env=os.environ.copy(),
-            start_new_session=True,
-        )
-    finally:
-        log.close()
-
-    time.sleep(0.2)
-    if process.poll() is not None:
-        raise SignalLightError(_worker_error_message(signal_name))
-
-    PID_FILE.write_text(
-        json.dumps(
-            {
-                "pid": process.pid,
-                "signal": signal_name,
-                "started_at": time.time(),
-            },
-            ensure_ascii=False,
-        )
-    )
-
-
-def _worker_matches(signal_name: str) -> bool:
-    state = _read_worker_state()
-    pid = state.get("pid")
-    return state.get("signal") == signal_name and isinstance(pid, int) and _is_running(pid)
-
-
-def _play_with_retries(signal: AgentSignal, *, speed: float) -> None:
-    last_error: SignalLightError | None = None
-    for _ in range(12):
-        try:
-            with SignalLight(LightMapping.from_env(os.environ)) as light:
-                signal.play(light, speed=speed)
-            return
-        except SignalLightError as exc:
-            last_error = exc
-            time.sleep(0.15)
-
-    raise last_error or SignalLightError("Failed to apply signal state.")
-
-
-def _worker_error_message(signal_name: str) -> str:
-    detail = ""
-    try:
-        detail = LOG_FILE.read_text(errors="replace").strip().splitlines()[-1]
-    except (FileNotFoundError, IndexError):
-        pass
-
-    if detail:
-        return f"Signal worker for {signal_name} exited immediately: {detail}"
-    return f"Signal worker for {signal_name} exited immediately."
-
-
-def stop_worker() -> None:
-    state = _read_worker_state()
-    pid = state.get("pid")
-    if isinstance(pid, int) and pid > 0 and pid != os.getpid():
-        _terminate(pid)
-
-    try:
-        PID_FILE.unlink()
-    except FileNotFoundError:
-        pass
-
-
-def _read_worker_state() -> dict[str, object]:
-    try:
-        return json.loads(PID_FILE.read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _terminate(pid: int) -> None:
-    if not _is_running(pid):
-        return
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    except PermissionError as exc:
-        raise SignalLightError(f"Cannot stop existing signal worker {pid}: {exc}") from exc
-
-    deadline = time.monotonic() + 1.0
-    while time.monotonic() < deadline:
-        if not _is_running(pid):
-            return
-        time.sleep(0.05)
-
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
-    except PermissionError as exc:
-        raise SignalLightError(f"Cannot stop existing signal worker {pid}: {exc}") from exc
-
-
-def _is_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True

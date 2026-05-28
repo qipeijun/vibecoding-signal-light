@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export COPYFILE_DISABLE=1
+
+APP_DIR="$ROOT_DIR/dist/build/Signal Light.app"
+CONTENTS_DIR="$APP_DIR/Contents"
+MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
+BIN_DIR_RESOURCES="$RESOURCES_DIR/bin"
+ICONSET_DIR="$ROOT_DIR/dist/SignalLight.iconset"
+
+swift build --package-path "$ROOT_DIR" -c release
+BIN_DIR="$(swift build --package-path "$ROOT_DIR" -c release --show-bin-path)"
+
+rm -rf "$APP_DIR"
+mkdir -p "$MACOS_DIR" "$BIN_DIR_RESOURCES"
+cp "$BIN_DIR/signal-light-mac" "$MACOS_DIR/signal-light-mac"
+cp "$BIN_DIR/signal-light-cli" "$BIN_DIR_RESOURCES/signal-light"
+"$ROOT_DIR/scripts/make-app-icon.py" "$ICONSET_DIR" >/dev/null
+cp "$ROOT_DIR/dist/SignalLight.icns" "$RESOURCES_DIR/SignalLight.icns"
+
+cat > "$BIN_DIR_RESOURCES/codex-signal-hook" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$BIN_DIR/signal-light" codex-hook "$@"
+SCRIPT
+
+cat > "$BIN_DIR_RESOURCES/claude-code-signal-hook" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$BIN_DIR/signal-light" claude-code-hook "$@"
+SCRIPT
+
+chmod +x "$BIN_DIR_RESOURCES/signal-light" \
+  "$BIN_DIR_RESOURCES/codex-signal-hook" \
+  "$BIN_DIR_RESOURCES/claude-code-signal-hook"
+
+cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>signal-light-mac</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.vibecoding.signal-light</string>
+  <key>CFBundleName</key>
+  <string>Signal Light</string>
+  <key>CFBundleDisplayName</key>
+  <string>Signal Light</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>SignalLight</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
+</dict>
+</plist>
+PLIST
+
+codesign --force --deep --sign - "$APP_DIR"
+
+echo "$APP_DIR"

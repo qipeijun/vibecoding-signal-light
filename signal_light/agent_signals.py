@@ -116,19 +116,15 @@ def _flash(green: bool = False, yellow: bool = False, red: bool = False) -> tupl
     )
 
 
-def _soft_pulse(green: bool = False, yellow: bool = False, red: bool = False) -> tuple[Frame, ...]:
-    return tuple(
-        Frame(green=green, yellow=yellow, red=red, seconds=0.16, brightness=level)
-        for level in (0.10, 0.18, 0.32, 0.50, 0.68, 0.50, 0.32, 0.18, 0.10)
-    )
-
-
-def _work_cycle() -> tuple[Frame, ...]:
+def _slow_flash(green: bool = False, yellow: bool = False, red: bool = False) -> tuple[Frame, Frame]:
     return (
-        *_soft_pulse(green=True),
-        *_soft_pulse(yellow=True),
-        *_soft_pulse(red=True),
+        Frame(green=green, yellow=yellow, red=red, seconds=0.55),
+        Frame(seconds=0.35),
     )
+
+
+def _work_pulse() -> tuple[Frame, ...]:
+    return _slow_flash(green=True)
 
 
 SIGNALS: dict[str, AgentSignal] = {
@@ -141,23 +137,23 @@ SIGNALS: dict[str, AgentSignal] = {
     ),
     "thinking": AgentSignal(
         name="thinking",
-        summary="Agent 已收到任务，正在思考或工作。",
+        summary="Agent 已收到任务，正在思考、工作或输出内容。",
         attention="不用处理。",
-        frames=_work_cycle(),
+        frames=_work_pulse(),
         repeat=True,
     ),
     "working": AgentSignal(
         name="working",
-        summary="Agent 正在执行工具、读写文件、跑命令或测试。",
+        summary="Agent 正在执行工具、读写文件、跑命令、测试或输出内容。",
         attention="不用处理。",
-        frames=_work_cycle(),
+        frames=_work_pulse(),
         repeat=True,
     ),
     "tool_done": AgentSignal(
         name="tool_done",
         summary="一次工具调用完成，Agent 仍处于工作流中。",
         attention="不用处理。",
-        frames=_work_cycle(),
+        frames=_work_pulse(),
         repeat=True,
     ),
     "attention": AgentSignal(
@@ -187,10 +183,9 @@ SIGNALS: dict[str, AgentSignal] = {
     "done": AgentSignal(
         name="done",
         summary="任务已完成。",
-        attention="建议查看最终答复。",
-        frames=_flash(yellow=True),
-        loops=8,
-        repeat=True,
+        attention="不需要关注。",
+        frames=_state(green=True)[0],
+        leave_on=_state(green=True)[1],
     ),
     "session_start": AgentSignal(
         name="session_start",

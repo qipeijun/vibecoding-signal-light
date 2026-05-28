@@ -1,304 +1,151 @@
-# AI Agent Traffic Signal Status Language
+# AI Agent Signal-Light Status Language
 
-This project uses a three-light traffic signal model as an ambient status display for Codex or other AI agents.
+This project uses a native macOS traffic-light utility as an ambient display for Codex, Claude Code, and other local AI agents.
 
-The language is deliberately small: the current light must always describe the current state. There are no important startup animations and no "blink first, meaning later" patterns. If Codex is working or needs you, the pattern keeps running until another Codex event changes the state.
+The language is deliberately small: the current light must describe the current state without asking you to keep checking a terminal or chat window. Animated states keep running in the Swift/AppKit app until another hook or CLI command writes a new state.
 
 ## Status Semantics
 
 | Light | Meaning | Human action |
 | --- | --- | --- |
-| steady green | Codex is idle | Nothing |
-| slow green-yellow-red cycle | Codex is thinking, using tools, or otherwise working | Wait |
-| flashing yellow | Codex explicitly needs you to read or continue | Look at Codex when convenient |
-| flashing red | Codex needs permission, is blocked, or hit a failure | Look at Codex now |
+| steady green | Agent is idle | Nothing |
+| slow green flash | Agent is thinking, using tools, writing files, testing, or outputting content | Wait |
+| flashing yellow | Agent explicitly needs you to read or continue | Look when convenient |
+| flashing red | Agent needs permission, is blocked, or hit a failure | Look now |
 | off | Manual clear | Nothing |
-
-That is the whole language.
 
 ## Signal Names
 
-The CLI still exposes named signals so hooks and other agents can use stable words:
+The CLI exposes stable signal names for hooks and other agents:
 
 | Signal | Light | Meaning |
 | --- | --- | --- |
 | `idle` | steady green | Agent is idle |
-| `thinking` | slow green-yellow-red cycle | Agent has received the prompt and is thinking |
-| `working` | slow green-yellow-red cycle | Agent is using tools, editing, running commands, or testing |
-| `tool_done` | slow green-yellow-red cycle | A tool call finished, but the agent is still in an active workflow |
-| `attention` | flashing yellow | Agent explicitly expects you to read or continue |
-| `done` | flashing yellow | Task completed; read the final answer |
-| `permission` | flashing red | Codex requests permission |
+| `thinking` | slow green flash | Agent has received the prompt and is thinking or outputting content |
+| `working` | slow green flash | Agent is using tools, editing, running commands, testing, or outputting content |
+| `tool_done` | slow green flash | A tool call finished, but the agent is still active |
+| `attention` | flashing yellow | Agent expects you to read or continue |
+| `done` | steady green | Task completed and returned to idle |
+| `permission` | flashing red | Agent requests permission |
 | `blocked` | flashing red | Agent cannot continue without intervention |
-| `session_start` | steady green | Codex session started and is idle |
-| `session_end` | steady green | Codex session ended and returned to idle |
-| `off` | off | Clear all lights |
+| `session_start` | steady green | Agent session started and is idle |
+| `session_end` | steady green | Agent session ended and returned to idle |
+| `off` | off | Clear the light |
+
+## macOS Display Surfaces
+
+The Swift/AppKit app renders the same state in three places:
+
+- Menu bar icon: always visible while the app is running.
+- Floating window: a draggable vertical traffic-light panel.
+- Touch Bar: compact three-light view when this app is active on Touch Bar Macs.
+
+Touch Bar is not globally persistent because public macOS APIs display Touch Bar content for the active app.
+
+## State File Contract
+
+Python hooks and CLI commands write the current state to:
+
+```text
+/private/tmp/signal-light/current_status.json
+```
+
+Override the directory with `SIGNAL_LIGHT_STATE_DIR`.
+
+The file shape is fixed:
+
+```json
+{
+  "aggregate": "working",
+  "updated_at": 1770000000.0
+}
+```
+
+The Swift app only accepts known signal names and ignores unknown values.
 
 ## Codex Hook Mapping
 
 | Codex event | Signal | Light |
 | --- | --- | --- |
 | `SessionStart` | `session_start` | steady green |
-| `UserPromptSubmit` | `thinking` | slow green-yellow-red cycle |
-| `PreToolUse` | `working` | slow green-yellow-red cycle |
-| `PostToolUse` | `tool_done` | slow green-yellow-red cycle |
+| `UserPromptSubmit` | `thinking` | slow green flash |
+| `PreToolUse` | `working` | slow green flash |
+| `PostToolUse` | `tool_done` | slow green flash |
 | `PermissionRequest` | `permission` | flashing red |
-| `Stop` | `turn_end` | clears non-urgent session state |
+| `Stop` | `done` | steady green |
 | `SessionEnd` | `session_end` | steady green |
 
-`turn_end` is a hook-only control state. It is not a public lamp pattern: it removes that session's non-urgent working state, while leaving any existing `permission` or `blocked` red alert intact.
+`turn_end` remains available as a hook-only control state for custom integrations. It removes that session's non-urgent working state, while leaving an existing `permission` or `blocked` red alert intact.
 
-If the hook payload reports failure through structured fields such as `status`, `state`, `error`, `failure`, `exception`, or a non-zero `exit_status`, the adapter uses `blocked`, which starts flashing the red light.
-
-Animated states are persistent. The command starts a small background worker and returns immediately, which keeps Codex hooks fast. The next steady state stops the worker before setting its own light. `Stop` is treated as the end of a normal turn, so it clears working state instead of flashing yellow after every response.
-
-The work cycle includes brightness levels for drivers that can dim LEDs. The current MCP2221A GPIO driver uses plain on/off output instead of software PWM, because USB GPIO timing makes simulated dimming visibly flicker.
-
-Codex hook state is session-aware. Each session stores its own latest signal, then the physical light shows the highest-priority aggregate:
-
-```text
-flashing red > flashing yellow > green-yellow-red work cycle > steady green
-```
-
-For example, if one Codex session is waiting for permission and another session starts working, the light stays flashing red. If one session is waiting for you to read a result and another session is working, the light stays flashing yellow.
-
-## Wiring Defaults
-
-The CLI assumes active-low MCP2221A GPIO wiring:
-
-- `gp0`: green
-- `gp1`: yellow
-- `gp2`: red
-- GPIO `LOW`: light on
-- GPIO `HIGH`: light off
-
-Override these with environment variables:
-
-```bash
-export SIGNAL_LIGHT_GREEN_PIN=gp0
-export SIGNAL_LIGHT_YELLOW_PIN=gp1
-export SIGNAL_LIGHT_RED_PIN=gp2
-export SIGNAL_LIGHT_ACTIVE_LOW=1
-```
-
-Set `SIGNAL_LIGHT_ACTIVE_LOW=0` if your signal model is wired active-high.
-
-## Try It Without Hardware
-
-```bash
-./scripts/signal-light list
-./scripts/signal-light play working --dry-run
-./scripts/signal-light play attention --dry-run
-./scripts/signal-light codex-hook PermissionRequest --dry-run
-```
-
-## Try It With Hardware
-
-```bash
-./scripts/signal-light test
-./scripts/signal-light play working
-./scripts/signal-light play attention
-./scripts/signal-light play permission
-./scripts/signal-light play idle
-./scripts/signal-light play off
-./scripts/signal-light status
-```
-
-If the wrong light turns on, adjust `SIGNAL_LIGHT_*_PIN`. If lights are inverted, adjust `SIGNAL_LIGHT_ACTIVE_LOW`.
-
-The wrapper scripts avoid writing `__pycache__` files in the repository. By default they use `.venv/bin/python` when it exists, then fall back to `python3`. Set `SIGNAL_LIGHT_USE_UV=1` if you want the wrappers to run through `uv run`.
+If the hook payload reports failure through structured fields such as `status`, `state`, `error`, `failure`, `exception`, or a non-zero `exit_status`, the adapter uses `blocked`.
 
 ## Claude Code Hook Mapping
 
 | Claude Code event | Signal | Light |
 | --- | --- | --- |
 | `SessionStart` | `session_start` | steady green |
-| `UserPromptSubmit` | `thinking` | slow green-yellow-red cycle |
-| `PreToolUse` | `working` | slow green-yellow-red cycle |
-| `PostToolUse` | `tool_done` | slow green-yellow-red cycle |
+| `UserPromptSubmit` | `thinking` | slow green flash |
+| `PreToolUse` | `working` | slow green flash |
+| `PostToolUse` | `tool_done` | slow green flash |
 | `PostToolUseFailure` | `blocked` | flashing red |
-| `PreCompact` | `working` | slow green-yellow-red cycle |
-| `SubagentStart` | `working` | slow green-yellow-red cycle |
-| `SubagentStop` | `tool_done` | slow green-yellow-red cycle |
+| `PreCompact` | `working` | slow green flash |
+| `SubagentStart` | `working` | slow green flash |
+| `SubagentStop` | `tool_done` | slow green flash |
 | `PermissionRequest` | `permission` | flashing red |
 | `Notification` | `attention` | flashing yellow |
-| `Stop` | `turn_end` | clears non-urgent session state |
+| `Stop` | `done` | steady green |
 | `SessionEnd` | `session_end` | steady green |
 
 If `Stop` carries a `stop_reason` of `max_tokens` or `error`, the adapter uses `blocked` instead of clearing state.
 
-## Claude Code settings.json Example
+## Hook Examples
 
-Add hooks to `~/.claude/settings.json` (or project `.claude/settings.json`):
+Codex hooks can call:
 
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 10
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/claude-code-signal-hook",
-            "timeout": 5
-          }
-        ],
-        "matcher": ""
-      }
-    ]
-  }
-}
+```bash
+/path/to/vibecoding-signal-light/scripts/codex-signal-hook UserPromptSubmit
+/path/to/vibecoding-signal-light/scripts/codex-signal-hook PreToolUse
+/path/to/vibecoding-signal-light/scripts/codex-signal-hook PermissionRequest
+/path/to/vibecoding-signal-light/scripts/codex-signal-hook Stop
 ```
 
-Note: Unlike Codex hooks where the event name must be passed as an argument, Claude Code passes the event as JSON on stdin, so the hook command does not need an event argument.
+Claude Code hooks can call:
 
-## Codex hooks.json Example
+```bash
+/path/to/vibecoding-signal-light/scripts/claude-code-signal-hook
+```
 
-Add command hooks like this to `~/.codex/hooks.json`, keeping any existing hooks you already use:
+Build the installer package:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/codex-signal-hook UserPromptSubmit",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/codex-signal-hook PreToolUse",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/codex-signal-hook PermissionRequest",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/liusixian/Develop/starlight36/signal-light/scripts/codex-signal-hook Stop",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+/path/to/vibecoding-signal-light/scripts/build-installer
+```
+
+After installing, start the native macOS display app:
+
+```bash
+open "/Applications/Signal Light.app"
+```
+
+The installer also opens the app automatically when installation finishes. Signal Light is a normal Dock-visible app and also keeps a status icon in the menu bar.
+
+Installed hook commands are available from `/usr/local/bin`:
+
+```bash
+signal-light
+codex-signal-hook
+claude-code-signal-hook
+signal-light-uninstall
+```
+
+Quit the running app:
+
+```bash
+signal-light quit
+```
+
+Uninstall the app, commands, and local state:
+
+```bash
+signal-light uninstall
 ```
