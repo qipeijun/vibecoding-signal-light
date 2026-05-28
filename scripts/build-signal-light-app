@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COPYFILE_DISABLE=1
+VERSION="${SIGNAL_LIGHT_VERSION:-0.1.0}"
 
 APP_DIR="$ROOT_DIR/dist/build/Signal Light.app"
 CONTENTS_DIR="$APP_DIR/Contents"
@@ -41,7 +42,7 @@ chmod +x "$BIN_DIR_RESOURCES/signal-light" \
   "$BIN_DIR_RESOURCES/codex-signal-hook" \
   "$BIN_DIR_RESOURCES/claude-code-signal-hook"
 
-cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
+cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -59,9 +60,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key>
   <string>SignalLight</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>${VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key>
   <string>11.0</string>
   <key>NSPrincipalClass</key>

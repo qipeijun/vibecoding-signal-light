@@ -88,12 +88,18 @@ If the hook payload reports failure through structured fields such as `status`, 
 | `PreToolUse` | `working` | slow green flash |
 | `PostToolUse` | `tool_done` | slow green flash |
 | `PostToolUseFailure` | `blocked` | flashing red |
+| `PostToolBatch` | `working` | slow green flash |
+| `PermissionDenied` | `blocked` | flashing red |
 | `PreCompact` | `working` | slow green flash |
+| `PostCompact` | `tool_done` | slow green flash |
 | `SubagentStart` | `working` | slow green flash |
 | `SubagentStop` | `tool_done` | slow green flash |
+| `TaskCreated` | `working` | slow green flash |
+| `TaskCompleted` | `tool_done` | slow green flash |
 | `PermissionRequest` | `permission` | flashing red |
 | `Notification` | `attention` | flashing yellow |
 | `Stop` | `done` | steady green |
+| `StopFailure` | `blocked` | flashing red |
 | `SessionEnd` | `session_end` | steady green |
 
 If `Stop` carries a `stop_reason` of `max_tokens` or `error`, the adapter uses `blocked` instead of clearing state.
@@ -113,6 +119,38 @@ Claude Code hooks can call:
 
 ```bash
 /path/to/vibecoding-signal-light/scripts/claude-code-signal-hook
+```
+
+Installed Claude Code hooks can use the app-bundled command:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/claude-code-signal-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/claude-code-signal-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
 Build the installer package:

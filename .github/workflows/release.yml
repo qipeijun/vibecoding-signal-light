@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 获取版本号
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "版本: ${VERSION}"
+
+      - name: 构建安装包
+        run: ./scripts/build-installer
+        env:
+          SIGNAL_LIGHT_VERSION: ${{ env.VERSION }}
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
+      - name: 上传到 Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Signal Light Installer.pkg
+          generate_release_notes: true
+
+      - name: 上传构建产物 (非 tag)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signal-light-installer
+          path: dist/Signal Light Installer.pkg

@@ -114,6 +114,23 @@ def test_claude_stop_with_error_reason_maps_to_blocked() -> None:
     assert signal == "blocked"
 
 
+@pytest.mark.parametrize(
+    ("event_name", "expected_signal"),
+    [
+        ("PostToolBatch", "working"),
+        ("TaskCreated", "working"),
+        ("TaskCompleted", "tool_done"),
+        ("PermissionDenied", "blocked"),
+        ("StopFailure", "blocked"),
+        ("PostCompact", "tool_done"),
+    ],
+)
+def test_claude_modern_events_map_to_explicit_signals(event_name: str, expected_signal: str) -> None:
+    signal = choose_claude_signal(ClaudeCodeHookInput(event_name=event_name, payload={}))
+
+    assert signal == expected_signal
+
+
 def test_failed_payload_maps_to_blocked() -> None:
     signal = choose_signal(
         CodexHookInput(

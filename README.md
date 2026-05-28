@@ -173,9 +173,18 @@ Supported Claude Code events include:
 | `PreToolUse` | Green slow flash |
 | `PostToolUse` | Green slow flash |
 | `PostToolUseFailure` | Red flashing |
+| `PostToolBatch` | Green slow flash |
+| `PermissionDenied` | Red flashing |
+| `PreCompact` | Green slow flash |
+| `PostCompact` | Green slow flash |
+| `SubagentStart` | Green slow flash |
+| `SubagentStop` | Green slow flash |
+| `TaskCreated` | Green slow flash |
+| `TaskCompleted` | Green slow flash |
 | `Notification` | Yellow flashing |
 | `PermissionRequest` | Red flashing |
 | `Stop` | Green idle |
+| `StopFailure` | Red flashing |
 | `SessionEnd` | Green idle |
 
 ## Multi-Session Behavior / 多会话行为
