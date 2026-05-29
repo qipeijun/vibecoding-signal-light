@@ -85,6 +85,15 @@ GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](doc
 open "dist/Signal-Light-Installer.pkg"
 ```
 
+如果下载 GitHub Release 里的安装包后 macOS 提示“Apple 无法验证 Signal-Light-Installer.pkg 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件”，可以按下面两步继续安装：
+
+1. 在弹窗里点“完成”，不要点“移到废纸篓”。
+2. 打开“系统设置” → “隐私与安全性”，在“安全性”区域找到“已阻止 Signal-Light-Installer.pkg 以保护 Mac”，点“仍要打开”，再按系统提示继续安装。
+
+![macOS 提示无法验证安装包，先点击完成](docs/images/gatekeeper-package-blocked.png)
+
+![在隐私与安全性中点击仍要打开](docs/images/privacy-security-open-anyway.png)
+
 GitHub Release 中面向普通用户分发的 pkg 需要 Apple Developer ID 签名和 notarization，否则浏览器下载后会被 macOS Gatekeeper 拦截。Release workflow 支持以下 secrets；配置后会自动签名、公证并 staple：
 
 - `MACOS_CERTIFICATE_P12_BASE64`：包含 Developer ID Application / Installer 证书和私钥的 p12 文件 base64。
