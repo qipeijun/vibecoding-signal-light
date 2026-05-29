@@ -136,18 +136,47 @@ public struct SignalStatus: Decodable {
     }
 }
 
+public struct SessionSource: Codable, Equatable {
+    public var bundleIdentifier: String?
+    public var processIdentifier: Int?
+    public var localizedName: String?
+    public var capturedAt: Double
+
+    enum CodingKeys: String, CodingKey {
+        case bundleIdentifier = "bundle_identifier"
+        case processIdentifier = "process_identifier"
+        case localizedName = "localized_name"
+        case capturedAt = "captured_at"
+    }
+
+    public init(
+        bundleIdentifier: String?,
+        processIdentifier: Int?,
+        localizedName: String?,
+        capturedAt: Double
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.processIdentifier = processIdentifier
+        self.localizedName = localizedName
+        self.capturedAt = capturedAt
+    }
+}
+
 public struct SessionRecord: Codable {
     public var signal: String
     public var updatedAt: Double
+    public var source: SessionSource?
 
     enum CodingKeys: String, CodingKey {
         case signal
         case updatedAt = "updated_at"
+        case source
     }
 
-    public init(signal: String, updatedAt: Double) {
+    public init(signal: String, updatedAt: Double, source: SessionSource? = nil) {
         self.signal = signal
         self.updatedAt = updatedAt
+        self.source = source
     }
 }
 

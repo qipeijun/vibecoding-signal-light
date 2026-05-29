@@ -84,11 +84,20 @@ final class SettingsTabViewController: NSViewController {
         header.orientation = .vertical
         header.spacing = 6
 
+        let topRow = NSStackView()
+        topRow.orientation = .horizontal
+        topRow.spacing = 10
+        topRow.alignment = .centerY
+
         headingLabel.font = NSFont.boldSystemFont(ofSize: 17)
         subtitleLabel.font = NSFont.systemFont(ofSize: 12)
         subtitleLabel.textColor = .secondaryLabelColor
         subtitleLabel.lineBreakMode = .byWordWrapping
         subtitleLabel.maximumNumberOfLines = 2
+
+        let versionLabel = NSTextField(labelWithString: SignalLightVersion.displayString)
+        versionLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        versionLabel.textColor = .secondaryLabelColor
 
         segmentedControl.segmentStyle = .rounded
         segmentedControl.selectedSegment = Section.display.rawValue
@@ -98,7 +107,10 @@ final class SettingsTabViewController: NSViewController {
             segmentedControl.setWidth(112, forSegment: section.rawValue)
         }
 
-        header.addArrangedSubview(segmentedControl)
+        topRow.addArrangedSubview(segmentedControl)
+        topRow.addArrangedSubview(NSView())
+        topRow.addArrangedSubview(versionLabel)
+        header.addArrangedSubview(topRow)
         header.addArrangedSubview(headingLabel)
         header.addArrangedSubview(subtitleLabel)
         root.addArrangedSubview(header)

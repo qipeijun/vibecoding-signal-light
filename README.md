@@ -51,7 +51,9 @@ GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](doc
 - macOS 原生 AppKit 应用，不依赖网页窗口渲染主界面。
 - 菜单栏常驻三色灯图标，左键打开设置面板，右键打开快捷菜单。
 - 可拖动的桌面悬浮状态灯，支持置顶、透明度、尺寸和动画速度配置。
+- 单击悬浮状态灯可跳回产生当前状态的 AI 或终端应用，拖动浮层不触发跳转。
 - 支持 Codex、Claude Code hook，把本地 Agent 事件映射为灯语。
+- 安装包会自动写入用户级 Codex / Claude Code hooks，也可用 `signal-light doctor` 检查接线状态。
 - 支持多会话聚合：有任意会话请求权限或阻塞时，整体状态优先显示红灯。
 - 支持状态规则自定义，可以为每个已知状态配置颜色和动画模式。
 - 提供配置诊断和修复入口，能检查配置文件、状态目录和写入权限。
@@ -91,6 +93,13 @@ open "dist/Signal-Light-Installer.pkg"
 - `/usr/local/bin/claude-code-signal-hook`
 - `/usr/local/bin/signal-light-uninstall`
 
+安装器会在当前登录用户下尝试写入：
+
+- `~/.codex/hooks.json`
+- `~/.claude/settings.json`
+
+Codex 的非托管 hook 首次运行前仍需要在 Codex 的 `/hooks` 面板里确认信任，这是 Codex 自身的安全机制。
+
 启动应用：
 
 ```bash
@@ -115,6 +124,7 @@ signal-light-uninstall
 
 ```bash
 signal-light list
+signal-light version
 signal-light play working
 signal-light play attention
 signal-light play permission
@@ -125,6 +135,18 @@ signal-light play idle
 
 ```bash
 signal-light quit
+```
+
+检查安装和 hook 接线：
+
+```bash
+signal-light doctor
+```
+
+手动重新写入 Codex / Claude Code hooks：
+
+```bash
+signal-light install-hooks
 ```
 
 ## Codex 集成

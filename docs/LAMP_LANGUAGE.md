@@ -176,6 +176,15 @@ claude-code-signal-hook
 signal-light-uninstall
 ```
 
+The installer attempts to write user-level Codex and Claude Code hook config automatically:
+
+```bash
+signal-light doctor
+signal-light install-hooks
+```
+
+Codex still requires reviewing and trusting non-managed hooks from its `/hooks` UI before they run.
+
 Quit the running app:
 
 ```bash

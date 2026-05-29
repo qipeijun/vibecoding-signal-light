@@ -117,6 +117,7 @@ final class DiagnosticsViewController: NSViewController {
         repairResultField?.stringValue = configStore.lastRepairResult ?? "无"
 
         let checks: [(String, Bool)] = [
+            ("应用版本 \(SignalLightVersion.displayString)", true),
             ("配置文件存在", FileManager.default.fileExists(atPath: configPath)),
             ("配置文件可读", (try? Data(contentsOf: configStore.configFileURL())) != nil),
             ("配置目录可写", FileManager.default.isWritableFile(atPath: configDirPath)),

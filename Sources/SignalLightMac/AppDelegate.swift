@@ -25,10 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var stateStore: SignalStateStore!
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let viewController = SignalViewController()
-    private var panel: NSPanel?
+    private var panel: SignalPanel?
     private var animationTimer: DispatchSourceTimer?
     private var stateDirectorySource: DispatchSourceFileSystemObject?
     private var lastFallbackRefresh = Date.distantPast
+    private var lastWakeRefresh = Date.distantPast
     private var tick = 0
     private var shouldShowPanel = true
     private var settingsPopover: NSPopover?
@@ -77,10 +78,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        NSWorkspace.shared.notificationCenter.addObserver(
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.addObserver(
             self,
             selector: #selector(workspaceDidActivateApplication),
             name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(workspaceDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(workspaceDidWake),
+            name: NSWorkspace.screensDidWakeNotification,
             object: nil
         )
     }
@@ -227,6 +241,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.worksWhenModal = true
+        panel.clickAction = { [weak self] in
+            self?.activateCurrentSourceApplication()
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -301,6 +318,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keepPanelFloating()
     }
 
+    @objc private func workspaceDidWake() {
+        recoverAfterWake()
+    }
+
     @objc private func signalStatusDidChange() {
         refreshStateAndViews()
     }
@@ -357,6 +378,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastFallbackRefresh = Date()
         updateViews()
         keepPanelFloating()
+    }
+
+    private func recoverAfterWake() {
+        let now = Date()
+        guard now.timeIntervalSince(lastWakeRefresh) >= 1 else {
+            return
+        }
+        lastWakeRefresh = now
+
+        animationTimer?.cancel()
+        startAnimationTimer()
+        stateDirectorySource?.cancel()
+        startStateDirectoryWatcher()
+        refreshStateAndViews()
+    }
+
+    private func activateCurrentSourceApplication() {
+        _ = stateStore.refresh()
+        let sessionState = readSessionState()
+        let agent = configStore.effectiveAgentConfig(from: config)
+        guard let source = SessionSourceActivation.preferredSource(
+            in: sessionState.sessions,
+            aggregate: stateStore.state,
+            sessionTTL: agent.sessionTTLSeconds
+        ) else {
+            return
+        }
+        SessionSourceActivation.activate(source)
+    }
+
+    private func readSessionState() -> SessionState {
+        let sessionFile = stateStore.stateDirectoryURL.appendingPathComponent("sessions.json")
+        guard let data = try? Data(contentsOf: sessionFile),
+              let state = try? JSONDecoder().decode(SessionState.self, from: data)
+        else {
+            return SessionState(sessions: [:])
+        }
+        return state
     }
 
     private func refreshStateIfFallbackIntervalElapsed() {

@@ -88,10 +88,14 @@ def apply_session_signal(session_key: str, signal_name: str, *, speed: float = 1
             if current_signal not in RED_SIGNALS:
                 sessions.pop(session_key, None)
         else:
+            previous = sessions.get(session_key)
+            source = previous.get("source") if isinstance(previous, dict) else None
             sessions[session_key] = {
                 "signal": signal_name,
                 "updated_at": now,
             }
+            if isinstance(source, dict):
+                sessions[session_key]["source"] = source
 
         aggregate = aggregate_sessions(sessions)
         _write_session_state(state)

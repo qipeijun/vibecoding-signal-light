@@ -39,6 +39,9 @@ func run(args: [String], store: StateStore, configStore: SignalLightConfigStore)
         FileHandle.standardOutput.write(data)
         print("")
         return 0
+    case "version", "--version", "-v":
+        print("Signal Light \(SignalLightVersion.displayString)")
+        return 0
     case "codex-hook":
         return try runCodexHook(args: rest, store: store)
     case "claude-code-hook":
@@ -53,12 +56,73 @@ func run(args: [String], store: StateStore, configStore: SignalLightConfigStore)
     case "uninstall":
         try uninstallSignalLight(stateDir: store.stateDir)
         return 0
+    case "doctor":
+        return try runDoctor(args: rest, store: store, configStore: configStore)
+    case "install-hooks":
+        return try runInstallHooks(args: rest)
     case "config":
         return try configCommand(args: rest, configStore: configStore)
     default:
         printHelp()
         return 2
     }
+}
+
+private func runDoctor(args: [String], store: StateStore, configStore: SignalLightConfigStore) throws -> Int {
+    let homeDirectory = try homeDirectoryArgument(from: args) ?? FileManager.default.homeDirectoryForCurrentUser
+    let configFile = configStore.configFileURL()
+    let config = configStore.loadOrRepairConfig()
+    let agent = configStore.effectiveAgentConfig(from: config)
+    let stateDir = URL(fileURLWithPath: agent.stateDirectory)
+    let appPath = "/Applications/Signal Light.app"
+    let checks: [(String, Bool, String)] = [
+        ("App 已安装", FileManager.default.fileExists(atPath: appPath), appPath),
+        ("signal-light 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/signal-light"), "/usr/local/bin/signal-light"),
+        ("Codex hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/codex-signal-hook"), "/usr/local/bin/codex-signal-hook"),
+        ("Claude hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/claude-code-signal-hook"), "/usr/local/bin/claude-code-signal-hook"),
+        ("配置文件存在", FileManager.default.fileExists(atPath: configFile.path), configFile.path),
+        ("状态目录可写", directoryIsWritable(stateDir), stateDir.path),
+    ]
+
+    var failed = false
+    for (title, ok, detail) in checks {
+        if !ok { failed = true }
+        print("\(ok ? "OK" : "FAIL") \(title): \(detail)")
+    }
+
+    for report in checkSignalLightHooks(homeDirectory: homeDirectory) {
+        if !report.ok { failed = true }
+        print("\(report.ok ? "OK" : "FAIL") \(report.title): \(report.message) (\(report.path))")
+    }
+
+    print("config path: \(configFile.path)")
+    print("state directory: \(store.stateDir.path)")
+    print("version: \(SignalLightVersion.current)")
+    return failed ? 1 : 0
+}
+
+private func runInstallHooks(args: [String]) throws -> Int {
+    let quiet = args.contains("--quiet")
+    let homeDirectory = try homeDirectoryArgument(from: args) ?? FileManager.default.homeDirectoryForCurrentUser
+    let reports = try installSignalLightHooks(homeDirectory: homeDirectory)
+    if !quiet {
+        for report in reports {
+            print("\(report.changed ? "UPDATED" : "OK") \(report.title): \(report.message) (\(report.path))")
+        }
+        print("Codex 首次发现新 hook 时仍会要求在 /hooks 里确认信任；这是 Codex 的安全机制。")
+    }
+    return 0
+}
+
+private func homeDirectoryArgument(from args: [String]) throws -> URL? {
+    guard let index = args.firstIndex(of: "--home") else {
+        return nil
+    }
+    let valueIndex = args.index(after: index)
+    guard valueIndex < args.endIndex else {
+        throw SignalCLIError.message("--home requires a path")
+    }
+    return URL(fileURLWithPath: args[valueIndex], isDirectory: true)
 }
 
 private func playSignal(args: [String], store: StateStore) throws -> Int {
@@ -102,7 +166,11 @@ private func runCodexHook(args: [String], store: StateStore) throws -> Int {
         return 0
     }
 
-    _ = try store.applySessionSignal(sessionKey: key, signalName: signal)
+    _ = try store.applySessionSignal(
+        sessionKey: key,
+        signalName: signal,
+        source: currentSessionSource(preference: .codex)
+    )
     return 0
 }
 
@@ -118,7 +186,11 @@ private func runClaudeHook(args: [String], store: StateStore) throws -> Int {
         return 0
     }
 
-    _ = try store.applySessionSignal(sessionKey: key, signalName: signal)
+    _ = try store.applySessionSignal(
+        sessionKey: key,
+        signalName: signal,
+        source: currentSessionSource(preference: .claudeCode)
+    )
     return 0
 }
 
@@ -187,7 +259,16 @@ private func configCommand(args: [String], configStore: SignalLightConfigStore) 
 }
 
 private func printHelp() {
-    print("Usage: signal-light <list|play|status|codex-hook|claude-code-hook|test|app|config|quit|uninstall>")
+    print("Usage: signal-light <list|play|status|version|codex-hook|claude-code-hook|test|app|doctor|install-hooks|config|quit|uninstall>")
+    print("       signal-light doctor [--home <path>]")
+    print("       signal-light install-hooks [--home <path>] [--quiet]")
+}
+
+private func directoryIsWritable(_ url: URL) -> Bool {
+    if FileManager.default.fileExists(atPath: url.path) {
+        return FileManager.default.isWritableFile(atPath: url.path)
+    }
+    return FileManager.default.isWritableFile(atPath: url.deletingLastPathComponent().path)
 }
 
 private var standardError = FileHandle.standardError

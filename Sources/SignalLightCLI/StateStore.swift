@@ -38,7 +38,7 @@ final class StateStore {
         try writeCurrentStatus(signal)
     }
 
-    func applySessionSignal(sessionKey: String, signalName: String) throws -> String {
+    func applySessionSignal(sessionKey: String, signalName: String, source: SessionSource? = nil) throws -> String {
         try withLock {
             var state = readSessionState()
             let now = Date().timeIntervalSince1970
@@ -55,7 +55,12 @@ final class StateStore {
                 guard validSignals.contains(signalName) else {
                     throw SignalCLIError.message("Unknown signal: \(signalName)")
                 }
-                state.sessions[sessionKey] = SessionRecord(signal: signalName, updatedAt: now)
+                let existingSource = state.sessions[sessionKey]?.source
+                state.sessions[sessionKey] = SessionRecord(
+                    signal: signalName,
+                    updatedAt: now,
+                    source: source ?? existingSource
+                )
             }
 
             let aggregate = aggregateSessions(state.sessions)
@@ -81,10 +86,28 @@ final class StateStore {
         let aggregate = aggregateSessions(state.sessions)
         let payload: [String: Any] = [
             "aggregate": aggregate,
-            "sessions": state.sessions.mapValues { [
-                "signal": $0.signal,
-                "updated_at": $0.updatedAt,
-            ] },
+            "sessions": state.sessions.mapValues { record in
+                var payload: [String: Any] = [
+                    "signal": record.signal,
+                    "updated_at": record.updatedAt,
+                ]
+                if let source = record.source {
+                    var sourcePayload: [String: Any] = [
+                        "captured_at": source.capturedAt,
+                    ]
+                    if let bundleIdentifier = source.bundleIdentifier {
+                        sourcePayload["bundle_identifier"] = bundleIdentifier
+                    }
+                    if let processIdentifier = source.processIdentifier {
+                        sourcePayload["process_identifier"] = processIdentifier
+                    }
+                    if let localizedName = source.localizedName {
+                        sourcePayload["localized_name"] = localizedName
+                    }
+                    payload["source"] = sourcePayload
+                }
+                return payload
+            },
         ]
         return try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
     }

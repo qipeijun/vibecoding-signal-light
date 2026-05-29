@@ -80,7 +80,7 @@ public struct AgentConfig: Codable, Equatable {
     public static let `default` = AgentConfig(
         stateDirectory: "/private/tmp/signal-light",
         sessionTTLSeconds: 86400,
-        launchAtLogin: false
+        launchAtLogin: true
     )
 
     public init(stateDirectory: String, sessionTTLSeconds: Double, launchAtLogin: Bool) {

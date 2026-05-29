@@ -381,6 +381,43 @@ def test_apply_session_signal_returns_to_idle_on_done(tmp_path, monkeypatch) -> 
     assert applied == ["working", "idle"]
 
 
+def test_old_session_json_without_source_remains_readable(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(runtime, "LOCK_FILE", tmp_path / "state.lock")
+    (tmp_path / "sessions.json").write_text(
+        json.dumps({"sessions": {"session-a": {"signal": "working", "updated_at": 1}}})
+    )
+
+    snapshot = runtime.read_session_snapshot()
+
+    assert snapshot["aggregate"] == "idle"
+    assert snapshot["sessions"] == {}
+
+
+def test_session_source_is_preserved_by_python_runtime(tmp_path, monkeypatch) -> None:
+    applied: list[str] = []
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(runtime, "LOCK_FILE", tmp_path / "state.lock")
+    monkeypatch.setattr(runtime, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
+    source = {
+        "bundle_identifier": "com.apple.Terminal",
+        "process_identifier": 123,
+        "localized_name": "Terminal",
+        "captured_at": 456.0,
+    }
+    (tmp_path / "sessions.json").write_text(
+        json.dumps({"sessions": {"session-a": {"signal": "working", "updated_at": 9999999999, "source": source}}})
+    )
+
+    assert apply_session_signal("session-a", "tool_done") == "working"
+
+    updated = json.loads((tmp_path / "sessions.json").read_text())
+    assert updated["sessions"]["session-a"]["source"] == source
+    assert applied == ["working"]
+
+
 def test_apply_session_signal_keeps_permission_on_turn_end(tmp_path, monkeypatch) -> None:
     applied: list[str] = []
     monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
