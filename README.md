@@ -27,9 +27,9 @@ Vibecoding Signal Light 是一个 macOS 原生状态灯工具，用悬浮三色�
 
 ### 演示视频
 
-<video src="docs/videos/signal-light-demo-1.mp4" controls muted playsinline width="720"></video>
+<video src="https://qipeijun.github.io/vibecoding-signal-light/docs/videos/signal-light-demo-1.mp4" controls muted playsinline width="720"></video>
 
-<video src="docs/videos/signal-light-demo-2.mp4" controls muted playsinline width="720"></video>
+<video src="https://qipeijun.github.io/vibecoding-signal-light/docs/videos/signal-light-demo-2.mp4" controls muted playsinline width="720"></video>
 
 ## 功能特性
 
