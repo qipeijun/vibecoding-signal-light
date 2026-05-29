@@ -85,6 +85,16 @@ GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](doc
 open "dist/Signal-Light-Installer.pkg"
 ```
 
+GitHub Release 中面向普通用户分发的 pkg 需要 Apple Developer ID 签名和 notarization，否则浏览器下载后会被 macOS Gatekeeper 拦截。Release workflow 支持以下 secrets；配置后会自动签名、公证并 staple：
+
+- `MACOS_CERTIFICATE_P12_BASE64`：包含 Developer ID Application / Installer 证书和私钥的 p12 文件 base64。
+- `MACOS_CERTIFICATE_PASSWORD`：p12 密码。
+- `DEVELOPER_ID_APPLICATION`：例如 `Developer ID Application: Your Name (TEAMID)`。
+- `DEVELOPER_ID_INSTALLER`：例如 `Developer ID Installer: Your Name (TEAMID)`。
+- `APPLE_ID`：Apple Developer 账号邮箱。
+- `APPLE_TEAM_ID`：Apple Developer Team ID。
+- `APPLE_APP_SPECIFIC_PASSWORD`：Apple ID app-specific password。
+
 安装后会写入：
 
 - `/Applications/Signal Light.app`

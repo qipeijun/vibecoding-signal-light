@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COPYFILE_DISABLE=1
 VERSION="${SIGNAL_LIGHT_VERSION:-1.0.3}"
+CODESIGN_IDENTITY="${SIGNAL_LIGHT_CODESIGN_IDENTITY:--}"
 
 APP_DIR="$ROOT_DIR/dist/build/Signal Light.app"
 CONTENTS_DIR="$APP_DIR/Contents"
@@ -71,6 +72,10 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP_DIR"
+codesign_args=(--force --deep --sign "$CODESIGN_IDENTITY")
+if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
+  codesign_args+=(--options runtime --timestamp)
+fi
+codesign "${codesign_args[@]}" "$APP_DIR"
 
 echo "$APP_DIR"

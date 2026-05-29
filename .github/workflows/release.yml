@@ -32,6 +32,36 @@ jobs:
       - name: 安装 uv
         uses: astral-sh/setup-uv@v7
 
+      - name: 导入 Apple 签名证书
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [[ -z "${MACOS_CERTIFICATE_P12_BASE64}" ]]; then
+            echo "未配置 MACOS_CERTIFICATE_P12_BASE64，跳过 Developer ID 签名。"
+            exit 0
+          fi
+          KEYCHAIN_PATH="$RUNNER_TEMP/signal-light-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERTIFICATE_PATH="$RUNNER_TEMP/signal-light-certificate.p12"
+          echo "${MACOS_CERTIFICATE_P12_BASE64}" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
       - name: 获取版本号
         shell: bash
         run: |
@@ -62,6 +92,11 @@ jobs:
         run: ./scripts/build-installer
         env:
           SIGNAL_LIGHT_VERSION: ${{ env.VERSION }}
+          SIGNAL_LIGHT_CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          SIGNAL_LIGHT_INSTALLER_SIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
 
       - name: 生成校验文件
