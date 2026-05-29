@@ -1,11 +1,22 @@
 # Vibecoding Signal Light
 
-给本地 AI 编程助手一个看得见的 macOS 状态灯。
+[![GitHub Pages](https://img.shields.io/badge/website-online-22c949?style=flat-square)](https://qipeijun.github.io/vibecoding-signal-light/)
+[![macOS](https://img.shields.io/badge/macOS-11%2B-111111?style=flat-square&logo=apple)](#安装)
+[![AI Agents](https://img.shields.io/badge/Codex%20%7C%20Claude%20Code-supported-22c949?style=flat-square)](#codex-集成)
 
-Vibecoding Signal Light 是一个 macOS 原生状态灯工具，用悬浮三色灯、菜单栏图标和配置面板展示 Codex、Claude Code 等本地 Agent 的实时状态。它适合长时间让 Agent 跑工具、改文件、等权限或等待你继续回复的场景：不用反复切回终端，也能一眼知道现在该不该处理。
+给 Codex、Claude Code 等本地 AI 编程助手一个看得见的 macOS 状态灯。
+
+Vibecoding Signal Light 是一个 macOS 原生 AI Agent 状态提示工具，用悬浮三色灯、菜单栏图标和配置面板展示 Codex、Claude Code 等本地 Agent 的实时状态。它适合长时间让 Agent 跑工具、改文件、等权限或等待你继续回复的场景：不用反复切回终端，也能一眼知道现在该不该处理。
 
 项目预览地址：[在线预览](https://qipeijun.github.io/vibecoding-signal-light/)
 
+## 适合谁
+
+- 经常同时跑 Codex、Claude Code 或本地自动化脚本的开发者。
+- 想在 macOS 菜单栏或桌面悬浮窗里看到 Agent 状态的人。
+- 需要区分“正在工作”“等待授权”“需要关注”“已经完成”的长任务工作流。
+
+GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](docs/GITHUB_ABOUT.md)。
 
 ## 界面预览
 

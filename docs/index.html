@@ -3,15 +3,59 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI 状态灯 - macOS 上的 AI Agent 状态提示</title>
+    <title>Vibecoding Signal Light - macOS AI Agent 状态灯</title>
     <meta
       name="description"
-      content="AI 状态灯是一个 macOS 原生状态提示工具，把 Codex、Claude Code 等 AI Agent 的工作状态放进菜单栏和悬浮窗。"
+      content="Vibecoding Signal Light 是 macOS 原生 AI Agent 状态灯，把 Codex、Claude Code 的思考中、工作中、等待授权和完成状态显示在菜单栏与桌面悬浮窗。"
     />
-    <meta property="og:title" content="AI 状态灯" />
-    <meta property="og:description" content="把 AI 工作状态放进菜单栏，思考中、工作中、完成，一眼看懂。" />
-    <meta property="og:image" content="assets/01_cover.png" />
+    <meta
+      name="keywords"
+      content="Vibecoding Signal Light,AI 状态灯,macOS 状态灯,Codex hook,Claude Code hook,AI Agent monitor,AI coding assistant,菜单栏工具,悬浮窗"
+    />
+    <meta name="author" content="qipeijun" />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#22c949" />
+    <meta name="application-name" content="Vibecoding Signal Light" />
+    <meta name="apple-mobile-web-app-title" content="Signal Light" />
+    <link rel="canonical" href="https://qipeijun.github.io/vibecoding-signal-light/" />
+    <meta property="og:site_name" content="Vibecoding Signal Light" />
+    <meta property="og:title" content="Vibecoding Signal Light - macOS AI Agent 状态灯" />
+    <meta property="og:description" content="把 Codex、Claude Code 等 AI Agent 的工作状态放进菜单栏和悬浮窗，等待授权、正在工作、已经完成一眼看懂。" />
+    <meta property="og:url" content="https://qipeijun.github.io/vibecoding-signal-light/" />
+    <meta property="og:image" content="https://qipeijun.github.io/vibecoding-signal-light/images/screenshot-floating-light.png" />
+    <meta property="og:image:width" content="1040" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content="Vibecoding Signal Light 的 macOS 悬浮状态灯和设置界面" />
+    <meta property="og:locale" content="zh_CN" />
     <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vibecoding Signal Light - macOS AI Agent 状态灯" />
+    <meta name="twitter:description" content="Codex、Claude Code、本地自动化任务的菜单栏状态灯和桌面悬浮窗。" />
+    <meta name="twitter:image" content="https://qipeijun.github.io/vibecoding-signal-light/images/screenshot-floating-light.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Vibecoding Signal Light",
+        "alternateName": "AI 状态灯",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS 11+",
+        "description": "macOS 原生 AI Agent 状态灯，把 Codex、Claude Code 等本地编程助手的实时状态显示在菜单栏和桌面悬浮窗。",
+        "url": "https://qipeijun.github.io/vibecoding-signal-light/",
+        "downloadUrl": "https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg",
+        "codeRepository": "https://github.com/qipeijun/vibecoding-signal-light",
+        "image": "https://qipeijun.github.io/vibecoding-signal-light/images/screenshot-floating-light.png",
+        "author": {
+          "@type": "Person",
+          "name": "qipeijun"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
     <style>
       :root {
         color-scheme: light;
@@ -471,9 +515,9 @@
   <body>
     <nav class="nav">
       <div class="nav-inner">
-        <a class="brand" href="#top" aria-label="AI 状态灯首页">
+        <a class="brand" href="#top" aria-label="Vibecoding Signal Light 首页">
           <span class="brand-mark"><span class="brand-dot"></span></span>
-          <span>AI 状态灯</span>
+          <span>Vibecoding Signal Light</span>
         </a>
         <div class="nav-links">
           <a href="#features">功能</a>
@@ -487,9 +531,9 @@
       <section class="hero">
         <div>
           <p class="eyebrow">macOS native status light for AI agents</p>
-          <h1>把 AI 工作状态放进菜单栏</h1>
+          <h1>Vibecoding Signal Light</h1>
           <p class="lead">
-            思考中、工作中、等待授权、已经完成，都用一盏小状态灯提示。适合 Codex、Claude Code 和长时间运行的本地自动化任务。
+            把 AI Agent 的思考中、工作中、等待授权和已经完成状态放进 macOS 菜单栏与桌面悬浮窗。适合 Codex、Claude Code 和长时间运行的本地自动化任务。
           </p>
           <div class="hero-actions">
             <a
