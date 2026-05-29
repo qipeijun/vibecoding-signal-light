@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "手动构建版本号，例如 1.0.3"
-        required: false
+        description: "手动发布版本号，例如 1.0.3"
+        required: true
         default: "0.0.0-dev"
 
 permissions:
@@ -34,11 +34,20 @@ jobs:
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+            RELEASE_TAG="${GITHUB_REF_NAME}"
           else
             VERSION="${{ github.event.inputs.version || '0.0.0-dev' }}"
+            VERSION="${VERSION#v}"
+            if [[ -z "${VERSION}" || "${VERSION}" == "0.0.0-dev" ]]; then
+              echo "手动发布必须填写真实版本号，例如 1.0.3"
+              exit 1
+            fi
+            RELEASE_TAG="v${VERSION}"
           fi
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
           echo "版本: ${VERSION}"
+          echo "Release tag: ${RELEASE_TAG}"
 
       - name: Swift 构建检查
         run: swift build --package-path .
@@ -58,16 +67,19 @@ jobs:
           shasum -a 256 Signal-Light-Installer.pkg > Signal-Light-Installer.pkg.sha256
 
       - name: 上传到 Release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Signal Light ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
           files: |
             dist/Signal-Light-Installer.pkg
             dist/Signal-Light-Installer.pkg.sha256
           generate_release_notes: true
 
       - name: 上传构建产物 (非 tag)
-        if: github.ref_type != 'tag'
+        if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: signal-light-installer
