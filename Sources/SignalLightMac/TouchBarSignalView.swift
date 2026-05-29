@@ -1,4 +1,5 @@
 import AppKit
+import SignalLightShared
 
 final class TouchBarSignalView: NSView {
     var frameState = SignalFrame(green: 1, yellow: 0, red: 0) {

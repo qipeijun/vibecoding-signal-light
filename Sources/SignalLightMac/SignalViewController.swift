@@ -1,8 +1,17 @@
 import AppKit
+import SignalLightShared
 
 final class SignalViewController: NSViewController, NSTouchBarDelegate {
     let signalView = SignalLightView(frame: NSRect(origin: .zero, size: SignalLightView.preferredSize))
     private var touchBarView: TouchBarSignalView?
+    var showTouchBar = true {
+        didSet {
+            if !showTouchBar {
+                touchBarView = nil
+                touchBar = nil
+            }
+        }
+    }
 
     override func loadView() {
         let rootView = NSView(frame: signalView.frame)
@@ -36,6 +45,9 @@ final class SignalViewController: NSViewController, NSTouchBarDelegate {
 
     @available(macOS 10.12.2, *)
     override func makeTouchBar() -> NSTouchBar? {
+        guard showTouchBar else {
+            return nil
+        }
         let touchBar = NSTouchBar()
         touchBar.delegate = self
         touchBar.defaultItemIdentifiers = [.signalLight]

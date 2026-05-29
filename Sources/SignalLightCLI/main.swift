@@ -1,17 +1,22 @@
 import Foundation
+import SignalLightShared
 
 let args = Array(CommandLine.arguments.dropFirst())
-let store = StateStore()
+
+// 提前加载配置，供 StateStore 使用
+let configStore = SignalLightConfigStore()
+let rawConfig = configStore.loadOrRepairConfig()
+let store = StateStore(config: rawConfig)
 
 do {
-    let code = try run(args: args, store: store)
+    let code = try run(args: args, store: store, configStore: configStore)
     exit(Int32(code))
 } catch {
     print(String(describing: error), to: &standardError)
     exit(1)
 }
 
-func run(args: [String], store: StateStore) throws -> Int {
+func run(args: [String], store: StateStore, configStore: SignalLightConfigStore) throws -> Int {
     guard let command = args.first else {
         printHelp()
         return 2
@@ -48,6 +53,8 @@ func run(args: [String], store: StateStore) throws -> Int {
     case "uninstall":
         try uninstallSignalLight(stateDir: store.stateDir)
         return 0
+    case "config":
+        return try configCommand(args: rest, configStore: configStore)
     default:
         printHelp()
         return 2
@@ -145,8 +152,42 @@ private func runApp() throws -> Int {
     throw SignalCLIError.message("Signal Light.app is not installed. Open /Applications/Signal Light.app first.")
 }
 
+private func configCommand(args: [String], configStore: SignalLightConfigStore) throws -> Int {
+    guard let subcommand = args.first else {
+        print("Usage: signal-light config <status|repair>")
+        return 2
+    }
+
+    switch subcommand {
+    case "status":
+        let configFile = configStore.configFileURL()
+        print("config path: \(configFile.path)")
+        print("exists: \(FileManager.default.fileExists(atPath: configFile.path))")
+
+        let config = configStore.loadOrRepairConfig()
+        let agent = configStore.effectiveAgentConfig(from: config)
+        print("schema version: \(config.schemaVersion)")
+        print("state directory: \(agent.stateDirectory)")
+        print("session TTL: \(agent.sessionTTLSeconds)")
+
+        if let repairResult = configStore.lastRepairResult {
+            print("last repair: \(repairResult)")
+        }
+        return 0
+
+    case "repair":
+        let config = try configStore.repairConfig()
+        print("config repaired (schema version \(config.schemaVersion))")
+        return 0
+
+    default:
+        print("Usage: signal-light config <status|repair>")
+        return 2
+    }
+}
+
 private func printHelp() {
-    print("Usage: signal-light <list|play|status|codex-hook|claude-code-hook|test|app|quit|uninstall>")
+    print("Usage: signal-light <list|play|status|codex-hook|claude-code-hook|test|app|config|quit|uninstall>")
 }
 
 private var standardError = FileHandle.standardError

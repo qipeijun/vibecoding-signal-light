@@ -5,25 +5,46 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "手动构建版本号，例如 1.0.3"
+        required: false
+        default: "0.0.0-dev"
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: macos-latest
+  package:
+    name: Build macOS installer
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+
       - name: 获取版本号
+        shell: bash
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.0.0-dev"
+            VERSION="${{ github.event.inputs.version || '0.0.0-dev' }}"
           fi
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           echo "版本: ${VERSION}"
+
+      - name: Swift 构建检查
+        run: swift build --package-path .
+
+      - name: Python 测试
+        run: PYTHONPATH=. uv run pytest
 
       - name: 构建安装包
         run: ./scripts/build-installer
@@ -31,11 +52,18 @@ jobs:
           SIGNAL_LIGHT_VERSION: ${{ env.VERSION }}
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
 
+      - name: 生成校验文件
+        run: |
+          cd dist
+          shasum -a 256 Signal-Light-Installer.pkg > Signal-Light-Installer.pkg.sha256
+
       - name: 上传到 Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Signal Light Installer.pkg
+          files: |
+            dist/Signal-Light-Installer.pkg
+            dist/Signal-Light-Installer.pkg.sha256
           generate_release_notes: true
 
       - name: 上传构建产物 (非 tag)
@@ -43,4 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: signal-light-installer
-          path: dist/Signal Light Installer.pkg
+          path: |
+            dist/Signal-Light-Installer.pkg
+            dist/Signal-Light-Installer.pkg.sha256
+          if-no-files-found: error

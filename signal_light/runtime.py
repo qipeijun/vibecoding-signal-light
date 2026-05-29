@@ -13,11 +13,46 @@ from typing import Iterator
 from signal_light.agent_signals import AgentSignal, SIGNALS
 
 
-STATE_DIR = Path(os.environ.get("SIGNAL_LIGHT_STATE_DIR", "/private/tmp/signal-light"))
+def _config_file_path() -> Path:
+    """共享配置文件路径，与 Swift 层一致。"""
+    return Path.home() / "Library" / "Application Support" / "Signal Light" / "config.json"
+
+
+def _read_agent_config() -> dict:
+    """读取 agent 配置，环境变量优先级高于配置文件。"""
+    result = {
+        "state_dir": "/private/tmp/signal-light",
+        "session_ttl": 86400,
+    }
+
+    config_path = _config_file_path()
+    try:
+        if config_path.exists():
+            config = json.loads(config_path.read_text())
+            agent = config.get("agent", {})
+            if isinstance(agent, dict):
+                if "stateDirectory" in agent:
+                    result["state_dir"] = str(agent["stateDirectory"])
+                if "sessionTTLSeconds" in agent:
+                    result["session_ttl"] = int(agent["sessionTTLSeconds"])
+    except (json.JSONDecodeError, OSError, ValueError):
+        pass
+
+    # 环境变量覆盖
+    if "SIGNAL_LIGHT_STATE_DIR" in os.environ:
+        result["state_dir"] = os.environ["SIGNAL_LIGHT_STATE_DIR"]
+    if "SIGNAL_LIGHT_SESSION_TTL_SECONDS" in os.environ:
+        result["session_ttl"] = int(os.environ["SIGNAL_LIGHT_SESSION_TTL_SECONDS"])
+
+    return result
+
+
+_agent_config = _read_agent_config()
+STATE_DIR = Path(_agent_config["state_dir"])
 SESSION_FILE = STATE_DIR / "sessions.json"
 CURRENT_STATUS_FILE = STATE_DIR / "current_status.json"
 LOCK_FILE = STATE_DIR / "state.lock"
-SESSION_TTL_SECONDS = int(os.environ.get("SIGNAL_LIGHT_SESSION_TTL_SECONDS", "86400"))
+SESSION_TTL_SECONDS = _agent_config["session_ttl"]
 STATUS_CHANGED_NOTIFICATION = b"com.vibecoding.signal-light.status-changed"
 
 RED_SIGNALS = {"permission", "blocked"}

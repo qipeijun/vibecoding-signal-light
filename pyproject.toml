@@ -1,6 +1,6 @@
 [project]
 name = "signal-light"
-version = "0.1.0"
+version = "1.0.3"
 description = "Native macOS traffic-light status utility for AI coding agents."
 readme = "README.md"
 requires-python = ">=3.11"

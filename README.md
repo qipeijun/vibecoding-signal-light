@@ -1,86 +1,95 @@
 # Vibecoding Signal Light
 
-> A native macOS status light for local AI coding agents.
-> 给 AI Agent 一个看得见的 macOS 状态灯。
+给本地 AI 编程助手一个看得见的 macOS 状态灯。
 
-Vibecoding Signal Light turns Codex, Claude Code, and other local AI coding agents into a small traffic-light utility on macOS. Its goal is not to show off automation, but to keep agent state visible without forcing you to keep checking a terminal or chat window.
+Vibecoding Signal Light 是一个 macOS 原生状态灯工具，用悬浮三色灯、菜单栏图标和配置面板展示 Codex、Claude Code 等本地 Agent 的实时状态。它适合长时间让 Agent 跑工具、改文件、等权限或等待你继续回复的场景：不用反复切回终端，也能一眼知道现在该不该处理。
 
-Vibecoding Signal Light 把 Codex、Claude Code 等本地 AI 编程助手的状态变成 macOS 上的小型交通灯工具。它的目标不是炫技，而是让 Agent 状态保持可见，避免你反复切回终端或聊天窗口确认进度。v1 使用 macOS 原生悬浮交通灯，不接入外部硬件。
+本项目基于开源项目 [starlight36/vibecoding-signal-light](https://github.com/starlight36/vibecoding-signal-light) 二次开发，感谢原项目提供的灵感和基础方向。
 
-## Demo / 示例
+## 界面预览
 
-![Vibecoding Signal Light hardware reference: green idle state mounted beside a laptop](docs/images/demo.jpg)
+### 悬浮状态灯
 
-The macOS floating window keeps the vertical traffic-light shape from the original hardware reference.
+![悬浮状态灯](docs/images/screenshot-floating-light.png)
 
-macOS 悬浮窗会参考这张效果图，保留竖向三色信号灯形态。
+### 显示设置
 
-## What It Shows / 灯语
+![显示设置面板](docs/images/screenshot-settings-display.png)
 
-| Light / 灯效 | Agent state / Agent 状态 | Human action / 你该做什么 |
+### 状态规则
+
+![状态规则面板](docs/images/screenshot-rules-panel.png)
+
+### 配置诊断
+
+![配置诊断面板](docs/images/screenshot-diagnostics.png)
+
+## 功能特性
+
+- macOS 原生 AppKit 应用，不依赖网页窗口渲染主界面。
+- 菜单栏常驻三色灯图标，左键打开设置面板，右键打开快捷菜单。
+- 可拖动的桌面悬浮状态灯，支持置顶、透明度、尺寸和动画速度配置。
+- 支持 Codex、Claude Code hook，把本地 Agent 事件映射为灯语。
+- 支持多会话聚合：有任意会话请求权限或阻塞时，整体状态优先显示红灯。
+- 支持状态规则自定义，可以为每个已知状态配置颜色和动画模式。
+- 提供配置诊断和修复入口，能检查配置文件、状态目录和写入权限。
+- 安装包会安装 App 和命令行工具，安装后的 hook 不依赖 Python 环境。
+
+## 灯语说明
+
+| 灯效 | 状态含义 | 你需要做什么 |
 | --- | --- | --- |
-| Steady green / 绿灯常亮 | Idle / 空闲 | Nothing / 不用管 |
-| Slow green flash / 绿灯慢闪 | Working / 正在思考、跑工具、改文件、测试或输出内容 | Wait / 等它跑 |
-| Flashing yellow / 黄灯闪烁 | Attention / 明确需要你读结果或继续 | Look when convenient / 有空看一眼 |
-| Flashing red / 红灯闪烁 | Permission, blocked, or failed / 需要权限、阻塞或失败 | Look now / 马上处理 |
-| Off / 全灭 | Manual clear / 手动清除 | Nothing / 不用管 |
+| 绿灯常亮 | 空闲、完成、会话开始或结束 | 不用处理 |
+| 绿灯脉冲 | Agent 正在思考、执行工具、写文件、跑测试或输出内容 | 等它继续跑 |
+| 黄灯闪烁 | Agent 停下来等你查看结果或继续回复 | 有空看一眼 |
+| 红灯闪烁 | 请求授权、阻塞、失败或需要你明确处理 | 立即处理 |
+| 全灭 | 状态关闭 | 不用处理 |
 
-## macOS App / macOS 状态灯
+状态规则只影响 macOS 显示端，不改变 hook 写入的状态枚举，也不改变多会话聚合优先级。
 
-The long-running display is a native Swift/AppKit app:
+## 安装
 
-- Menu bar status icon with no text.
-- Floating vertical traffic-light window.
-- Public `NSTouchBar` integration when the app is active on Touch Bar Macs.
-- Python hooks only write state files; Python does not stay alive to render UI.
-
-长驻显示端是 Swift/AppKit 原生应用：
-
-- 状态栏常驻三色灯图标，不显示文字。
-- 可拖动的竖向信号灯悬浮窗。
-- 带 Touch Bar 的 Mac 在本应用激活时会显示紧凑三灯状态。
-- Python hook 只负责写状态文件，不作为长驻 UI 进程。
-
-Touch Bar note: macOS public APIs show Touch Bar content for the active app. This project does not use private APIs to occupy the Touch Bar globally.
-
-Touch Bar 说明：macOS 公开 API 只允许前台 App 提供 Touch Bar 内容。本项目不使用私有 API 全局占用 Touch Bar。
-
-## Install / 安装
-
-Build the installer package:
+构建安装包：
 
 ```bash
 ./scripts/build-installer
 ```
 
-Then open:
+打开安装包：
 
 ```bash
-open "dist/Signal Light Installer.pkg"
+open "dist/Signal-Light-Installer.pkg"
 ```
 
-The installer puts the app in `/Applications` and installs these commands to `/usr/local/bin`:
+安装后会写入：
 
-- `signal-light`
-- `codex-signal-hook`
-- `claude-code-signal-hook`
-- `signal-light-uninstall`
+- `/Applications/Signal Light.app`
+- `/usr/local/bin/signal-light`
+- `/usr/local/bin/codex-signal-hook`
+- `/usr/local/bin/claude-code-signal-hook`
+- `/usr/local/bin/signal-light-uninstall`
 
-No Python environment is required for the installed app or installed hook commands.
-
-The installer opens Signal Light automatically after installation. The app appears in the Dock and also shows a menu bar signal icon.
-
-安装包会把应用安装到 `/Applications`，并把命令安装到 `/usr/local/bin`。安装完成后会自动启动 Signal Light；App 会出现在 Dock，同时也会显示状态栏信号灯图标。安装后的 App 和 hook 命令不依赖 Python 环境。
-
-## Quick Start / 快速开始
-
-Start the native macOS status light:
+启动应用：
 
 ```bash
 open "/Applications/Signal Light.app"
 ```
 
-In another shell, preview signals:
+卸载：
+
+```bash
+signal-light uninstall
+```
+
+或：
+
+```bash
+signal-light-uninstall
+```
+
+## 快速试用
+
+启动 App 后，可以用命令行预览不同状态：
 
 ```bash
 signal-light list
@@ -90,138 +99,143 @@ signal-light play permission
 signal-light play idle
 ```
 
-Quit the running app:
+退出运行中的 App：
 
 ```bash
 signal-light quit
 ```
 
-Uninstall everything installed by the package:
+## Codex 集成
+
+Codex hook 可以直接调用适配脚本：
 
 ```bash
-signal-light uninstall
+codex-signal-hook UserPromptSubmit
+codex-signal-hook PreToolUse
+codex-signal-hook PermissionRequest
+codex-signal-hook Stop
 ```
 
-or:
+推荐映射：
+
+| Codex 事件 | 状态灯表现 |
+| --- | --- |
+| `SessionStart` | 绿灯常亮 |
+| `UserPromptSubmit` | 绿灯脉冲 |
+| `PreToolUse` | 绿灯脉冲 |
+| `PostToolUse` | 绿灯脉冲 |
+| `PermissionRequest` | 红灯闪烁 |
+| `Stop` | 绿灯常亮 |
+| `SessionEnd` | 绿灯常亮 |
+
+完整灯语和 hook 示例见 [docs/LAMP_LANGUAGE.md](docs/LAMP_LANGUAGE.md)。
+
+## Claude Code 集成
+
+Claude Code hook 通常从 stdin 传入 JSON：
 
 ```bash
-signal-light-uninstall
+echo '{"event":"PreToolUse","session_id":"demo"}' | claude-code-signal-hook
+echo '{"event":"PermissionRequest","session_id":"demo"}' | claude-code-signal-hook
+echo '{"event":"Notification","session_id":"demo"}' | claude-code-signal-hook
 ```
 
-The uninstaller quits the app first, then removes `/Applications/Signal Light.app`, the `/usr/local/bin` commands, and the local state directory.
+常见映射：
 
-During local development, you can run from the repo without installing:
+| Claude Code 事件 | 状态灯表现 |
+| --- | --- |
+| `SessionStart` | 绿灯常亮 |
+| `UserPromptSubmit` | 绿灯脉冲 |
+| `PreToolUse` | 绿灯脉冲 |
+| `PostToolUse` | 绿灯脉冲 |
+| `PostToolUseFailure` | 红灯闪烁 |
+| `PermissionDenied` | 红灯闪烁 |
+| `Notification` | 黄灯闪烁 |
+| `PermissionRequest` | 红灯闪烁 |
+| `Stop` | 绿灯常亮 |
+| `StopFailure` | 红灯闪烁 |
+| `SessionEnd` | 绿灯常亮 |
+
+## 配置文件
+
+配置文件路径：
+
+```text
+~/Library/Application Support/Signal Light/config.json
+```
+
+Mac App、Swift CLI 和 Python 开发脚本共享同一份配置。环境变量优先级高于配置文件：
+
+| 环境变量 | 覆盖配置 |
+| --- | --- |
+| `SIGNAL_LIGHT_STATE_DIR` | `agent.stateDirectory` |
+| `SIGNAL_LIGHT_SESSION_TTL_SECONDS` | `agent.sessionTTLSeconds` |
+
+配置生命周期：
+
+- 首次启动缺少配置文件时，会自动创建默认配置。
+- 旧配置会按字段合并升级，保留已有用户设置并补齐缺失字段。
+- JSON 损坏时会备份为 `.broken-<timestamp>.json` 后重建默认配置。
+- 非法状态规则、颜色或动画模式会被清理，并保存清理后的配置。
+- 保存或修复失败会在 UI 中显示错误，CLI 会返回非 0。
+
+检查配置：
+
+```bash
+signal-light config status
+```
+
+修复配置：
+
+```bash
+signal-light config repair
+```
+
+## 设置面板
+
+左键点击菜单栏图标打开设置面板：
+
+- **显示**：悬浮窗启动显示、置顶、窗口大小、透明度、动画速度、Dock 图标、Touch Bar。
+- **Agent**：状态目录、会话超时、登录启动、清理会话。
+- **规则**：为 11 个已知状态配置颜色和动画模式。
+- **诊断**：检查配置文件、状态目录和修复写入问题。
+
+右键点击菜单栏图标打开快捷菜单，可以显示/隐藏悬浮窗或退出应用。
+
+登录启动使用 Apple 官方 `SMAppService` API。macOS 13 及以上支持自动注册；macOS 11/12 会在 UI 中标明不支持自动设置，不保存假成功状态。
+
+## 本地开发
+
+运行 Swift 构建：
+
+```bash
+swift build --package-path .
+```
+
+运行 Python 测试：
+
+```bash
+PYTHONPATH=. uv run pytest
+```
+
+从源码启动 macOS App：
 
 ```bash
 ./scripts/signal-light-app
-./scripts/signal-light app
 ```
 
-The app reads:
-
-```text
-/private/tmp/signal-light/current_status.json
-```
-
-Override the state directory when needed:
+生成 README 软件界面截图：
 
 ```bash
-export SIGNAL_LIGHT_STATE_DIR=/private/tmp/my-signal-light
+.build/debug/signal-light-mac --capture-readme-screenshots docs/images
 ```
 
-## Codex Integration / Codex 集成
+## 项目边界
 
-Codex hooks can call the wrapper with the event name:
+- 当前版本是 macOS 原生状态灯，不恢复 MCP2221A/GPIO 硬件控制路径。
+- Touch Bar 使用 macOS 公开 API，只在本 App 激活时展示，不使用私有 API 全局占用 Touch Bar。
+- 未知状态、未知颜色、未知动画模式会按错误配置处理并在修复时清理，不做猜测式兜底。
 
-```bash
-./scripts/codex-signal-hook UserPromptSubmit
-./scripts/codex-signal-hook PreToolUse
-./scripts/codex-signal-hook PermissionRequest
-./scripts/codex-signal-hook Stop
-```
+## 致谢
 
-Recommended mapping:
-
-| Codex event | Signal behavior |
-| --- | --- |
-| `SessionStart` | Green idle |
-| `UserPromptSubmit` | Green slow flash |
-| `PreToolUse` | Green slow flash |
-| `PostToolUse` | Green slow flash |
-| `PermissionRequest` | Red flashing |
-| `Stop` | Green idle |
-| `SessionEnd` | Green idle |
-
-See [docs/LAMP_LANGUAGE.md](docs/LAMP_LANGUAGE.md) for complete hook examples.
-
-## Claude Code Integration / Claude Code 集成
-
-Claude Code sends hook data as JSON on stdin, so the wrapper usually needs no event argument:
-
-```bash
-echo '{"event":"PreToolUse","session_id":"demo"}' | ./scripts/claude-code-signal-hook
-echo '{"event":"PermissionRequest","session_id":"demo"}' | ./scripts/claude-code-signal-hook
-echo '{"event":"Notification","session_id":"demo"}' | ./scripts/claude-code-signal-hook
-```
-
-Supported Claude Code events include:
-
-| Claude Code event | Signal behavior |
-| --- | --- |
-| `SessionStart` | Green idle |
-| `UserPromptSubmit` | Green slow flash |
-| `PreToolUse` | Green slow flash |
-| `PostToolUse` | Green slow flash |
-| `PostToolUseFailure` | Red flashing |
-| `PostToolBatch` | Green slow flash |
-| `PermissionDenied` | Red flashing |
-| `PreCompact` | Green slow flash |
-| `PostCompact` | Green slow flash |
-| `SubagentStart` | Green slow flash |
-| `SubagentStop` | Green slow flash |
-| `TaskCreated` | Green slow flash |
-| `TaskCompleted` | Green slow flash |
-| `Notification` | Yellow flashing |
-| `PermissionRequest` | Red flashing |
-| `Stop` | Green idle |
-| `StopFailure` | Red flashing |
-| `SessionEnd` | Green idle |
-
-## Multi-Session Behavior / 多会话行为
-
-The runtime stores the latest state for each agent session and writes the highest-priority aggregate to the macOS app state file:
-
-```text
-red flashing > yellow flashing > green slow flash > steady green
-```
-
-That means one session waiting for permission stays red even if another session starts working.
-
-运行时会记录每个 Agent 会话的最新状态，并把最高优先级状态写给 macOS 状态灯：
-
-```text
-红灯闪烁 > 黄灯闪烁 > 工作绿灯慢闪 > 绿灯常亮
-```
-
-因此，一个会话正在等待权限时，即使另一个会话开始工作，状态灯也会继续保持红灯闪烁。
-
-## State File Contract / 状态文件约定
-
-The Swift app only reads explicit signal names:
-
-```json
-{
-  "aggregate": "working",
-  "updated_at": 1770000000.0
-}
-```
-
-Unknown values are ignored instead of guessed.
-
-Swift 应用只识别明确状态枚举；未知值会被忽略，不做宽泛兜底。
-
-## Project Status / 项目状态
-
-This is a native macOS status-light utility for local AI coding agents. The old MCP2221A/GPIO hardware control path remains out of scope for v1.
-
-这是一个 macOS 原生 AI 编程状态灯小工具，用悬浮三色交通灯展示本地 Agent 状态。v1 不恢复旧的 MCP2221A/GPIO 硬件控制路径。
+本项目基于 [starlight36/vibecoding-signal-light](https://github.com/starlight36/vibecoding-signal-light) 二次开发。感谢原作者和原项目让“给 AI Agent 一个可见状态灯”这个想法有了可延展的开源基础。

@@ -21,6 +21,7 @@ venv/
 
 # Local machine files
 .DS_Store
+.idea/
 *.log
 .env
 .env.*

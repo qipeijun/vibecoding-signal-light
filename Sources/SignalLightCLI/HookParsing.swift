@@ -1,4 +1,5 @@
 import Foundation
+import SignalLightShared
 
 private let codexEventToSignal: [String: String] = [
     "SessionStart": "session_start",

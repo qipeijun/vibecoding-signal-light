@@ -1,4 +1,5 @@
 import AppKit
+import SignalLightShared
 
 func makeStatusIcon(frameState: SignalFrame) -> NSImage {
     let size = NSSize(width: 36, height: 18)

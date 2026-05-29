@@ -1,33 +1,10 @@
 import CoreFoundation
 import Foundation
+import SignalLightShared
 
 private let statusChangedNotificationName = "com.vibecoding.signal-light.status-changed"
 private let statusChangedCFNotificationName = statusChangedNotificationName as CFString
 private let statusChangedNotification = Notification.Name(statusChangedNotificationName)
-
-struct SessionRecord: Codable {
-    var signal: String
-    var updatedAt: Double
-
-    enum CodingKeys: String, CodingKey {
-        case signal
-        case updatedAt = "updated_at"
-    }
-}
-
-struct SessionState: Codable {
-    var sessions: [String: SessionRecord]
-}
-
-struct CurrentStatus: Codable {
-    var aggregate: String
-    var updatedAt: Double
-
-    enum CodingKeys: String, CodingKey {
-        case aggregate
-        case updatedAt = "updated_at"
-    }
-}
 
 final class StateStore {
     let stateDir: URL
@@ -36,12 +13,22 @@ final class StateStore {
     private let lockFile: URL
     private let sessionTTL: Double
 
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        stateDir = URL(fileURLWithPath: environment["SIGNAL_LIGHT_STATE_DIR"] ?? "/private/tmp/signal-light")
+    init(environment: [String: String] = ProcessInfo.processInfo.environment, config: SignalLightConfig? = nil) {
+        let configStore = SignalLightConfigStore()
+        let agentConfig: AgentConfig
+        if let config {
+            agentConfig = configStore.effectiveAgentConfig(from: config, environment: environment)
+        } else {
+            // 无 config 时也尝试加载，让环境变量覆盖机制正常工作
+            let loaded = configStore.loadOrRepairConfig()
+            agentConfig = configStore.effectiveAgentConfig(from: loaded, environment: environment)
+        }
+
+        stateDir = URL(fileURLWithPath: agentConfig.stateDirectory)
         sessionFile = stateDir.appendingPathComponent("sessions.json")
         currentStatusFile = stateDir.appendingPathComponent("current_status.json")
         lockFile = stateDir.appendingPathComponent("state.lock")
-        sessionTTL = Double(environment["SIGNAL_LIGHT_SESSION_TTL_SECONDS"] ?? "86400") ?? 86400
+        sessionTTL = agentConfig.sessionTTLSeconds
     }
 
     func applySignal(_ signal: String) throws {

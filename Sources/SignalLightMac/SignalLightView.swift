@@ -1,4 +1,5 @@
 import AppKit
+import SignalLightShared
 
 final class SignalLightView: NSView {
     static let preferredSize = NSSize(width: 56, height: 122)
@@ -57,12 +58,6 @@ final class SignalLightView: NSView {
         ])
         gradient?.draw(in: body, angle: 90)
 
-        let innerHighlight = NSBezierPath()
-        innerHighlight.move(to: CGPoint(x: rect.minX + 8, y: rect.minY + 12))
-        innerHighlight.line(to: CGPoint(x: rect.minX + 8, y: rect.maxY - 14))
-        NSColor.white.withAlphaComponent(0.055).setStroke()
-        innerHighlight.lineWidth = 1
-        innerHighlight.stroke()
     }
 
     private func drawLamp(center: CGPoint, radius: CGFloat, color: NSColor, brightness: CGFloat) {

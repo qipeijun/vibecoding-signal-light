@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 状态灯 - macOS 上的 AI Agent 状态提示</title>
+    <meta
+      name="description"
+      content="AI 状态灯是一个 macOS 原生状态提示工具，把 Codex、Claude Code 等 AI Agent 的工作状态放进菜单栏和悬浮窗。"
+    />
+    <meta property="og:title" content="AI 状态灯" />
+    <meta property="og:description" content="把 AI 工作状态放进菜单栏，思考中、工作中、完成，一眼看懂。" />
+    <meta property="og:image" content="assets/01_cover.png" />
+    <meta property="og:type" content="website" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #101815;
+        --muted: #5f6f69;
+        --soft: #eff7f3;
+        --panel: #ffffff;
+        --line: #dce7e1;
+        --accent: #22c949;
+        --accent-dark: #168a36;
+        --shadow: 0 24px 70px rgba(24, 42, 34, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+          "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        background: #f8fbf9;
+        color: var(--ink);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        border-bottom: 1px solid rgba(16, 24, 21, 0.08);
+        background: rgba(248, 251, 249, 0.88);
+        backdrop-filter: blur(18px);
+      }
+
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: min(1120px, calc(100% - 40px));
+        min-height: 64px;
+        margin: 0 auto;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        background: #202422;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+      }
+
+      .brand-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(34, 201, 73, 0.18);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .nav-links a:hover {
+        color: var(--ink);
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 20px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .button-primary {
+        background: var(--ink);
+        color: #fff;
+        box-shadow: 0 14px 34px rgba(16, 24, 21, 0.18);
+      }
+
+      .button-primary:hover {
+        background: #25302b;
+      }
+
+      .button-secondary {
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--ink);
+      }
+
+      .button-secondary:hover {
+        border-color: #b8cac0;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(360px, 0.9fr);
+        gap: 56px;
+        align-items: center;
+        width: min(1120px, calc(100% - 40px));
+        min-height: calc(100vh - 64px);
+        margin: 0 auto;
+        padding: 64px 0 42px;
+      }
+
+      .eyebrow {
+        margin: 0 0 18px;
+        color: var(--accent-dark);
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(48px, 8vw, 86px);
+        line-height: 1.02;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 620px;
+        margin: 24px 0 0;
+        color: var(--muted);
+        font-size: 22px;
+        line-height: 1.6;
+        font-weight: 560;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 34px;
+      }
+
+      .download-note {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .hero-visual {
+        position: relative;
+      }
+
+      .hero-visual img {
+        width: 100%;
+        border-radius: 34px;
+        box-shadow: var(--shadow);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 22px;
+        padding: 12px 16px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .pulse {
+        width: 11px;
+        height: 11px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 8px rgba(34, 201, 73, 0.14);
+      }
+
+      .section {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 84px 0;
+      }
+
+      .section-header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 28px;
+      }
+
+      .section h2 {
+        max-width: 680px;
+        margin: 0;
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      .section-copy {
+        max-width: 520px;
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+        font-weight: 560;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .feature-card {
+        min-height: 190px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        background: var(--panel);
+        box-shadow: 0 16px 42px rgba(24, 42, 34, 0.08);
+      }
+
+      .feature-card strong {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 20px;
+      }
+
+      .feature-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      .showcase {
+        display: grid;
+        grid-template-columns: 0.86fr 1.14fr;
+        gap: 34px;
+        align-items: center;
+        padding: 34px;
+        border: 1px solid var(--line);
+        border-radius: 34px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .showcase:nth-child(even) {
+        grid-template-columns: 1.14fr 0.86fr;
+      }
+
+      .showcase + .showcase {
+        margin-top: 24px;
+      }
+
+      .showcase img {
+        width: 100%;
+        border-radius: 26px;
+        background: var(--soft);
+      }
+
+      .showcase-text {
+        padding: 16px;
+      }
+
+      .showcase-text h3 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 42px);
+        line-height: 1.1;
+      }
+
+      .showcase-text p {
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+        font-weight: 560;
+      }
+
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .tag {
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--soft);
+        color: #31413b;
+        font-size: 13px;
+        font-weight: 760;
+      }
+
+      .download {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 28px;
+        align-items: center;
+        padding: 34px;
+        border-radius: 34px;
+        background: var(--ink);
+        color: #fff;
+      }
+
+      .download h2 {
+        color: #fff;
+      }
+
+      .download .section-copy {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .download-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .download .button-primary {
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .download .button-secondary {
+        border-color: rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+
+      .terminal {
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .terminal pre {
+        margin: 0;
+        padding: 18px;
+        color: rgba(255, 255, 255, 0.84);
+        font: 14px/1.7 "SF Mono", Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      footer {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 34px 0 46px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      footer a {
+        color: var(--ink);
+        font-weight: 760;
+      }
+
+      @media (max-width: 880px) {
+        .nav-links a:not(.button) {
+          display: none;
+        }
+
+        .hero,
+        .showcase,
+        .showcase:nth-child(even),
+        .download {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          min-height: auto;
+          padding-top: 48px;
+        }
+
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section {
+          padding: 58px 0;
+        }
+
+        .section-header {
+          display: block;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .nav-inner,
+        .hero,
+        .section,
+        footer {
+          width: min(100% - 28px, 1120px);
+        }
+
+        .nav-inner {
+          min-height: 58px;
+        }
+
+        .brand span:last-child {
+          display: none;
+        }
+
+        .hero-actions,
+        .download-actions {
+          width: 100%;
+        }
+
+        .button {
+          width: 100%;
+        }
+
+        .showcase,
+        .download {
+          padding: 18px;
+          border-radius: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="#top" aria-label="AI 状态灯首页">
+          <span class="brand-mark"><span class="brand-dot"></span></span>
+          <span>AI 状态灯</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">功能</a>
+          <a href="#screens">界面</a>
+          <a href="#download" class="button button-primary">下载</a>
+        </div>
+      </div>
+    </nav>
+
+    <main id="top">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">macOS native status light for AI agents</p>
+          <h1>把 AI 工作状态放进菜单栏</h1>
+          <p class="lead">
+            思考中、工作中、等待授权、已经完成，都用一盏小状态灯提示。适合 Codex、Claude Code 和长时间运行的本地自动化任务。
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg"
+            >
+              下载 macOS 安装包
+            </a>
+            <a class="button button-secondary" href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest">
+              查看最新版本
+            </a>
+          </div>
+          <p class="download-note">支持 macOS 11+。安装包由 GitHub Actions 自动构建并发布。</p>
+          <div class="status-pill"><span class="pulse"></span> 当前状态：空闲</div>
+        </div>
+        <div class="hero-visual">
+          <img src="assets/01_cover.png" alt="AI 状态灯主视觉和设置面板预览" />
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="section-header">
+          <div>
+            <h2>不打断工作流，只在需要时提醒</h2>
+            <p class="section-copy">
+              状态灯常驻菜单栏和桌面悬浮窗。你可以继续写代码、看文档或离开屏幕，等 Agent 需要权限或结果需要确认时再回来处理。
+            </p>
+          </div>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <strong>菜单栏与悬浮窗</strong>
+            <p>小尺寸、低打扰，支持置顶显示。工作中保持绿色脉冲，需要关注时切换黄灯或红灯。</p>
+          </article>
+          <article class="feature-card">
+            <strong>11 种状态规则</strong>
+            <p>为空闲、思考中、工作中、授权、阻塞、完成等状态单独配置灯色和动画方式。</p>
+          </article>
+          <article class="feature-card">
+            <strong>面向技术工作流</strong>
+            <p>支持 Codex、Claude Code hook，也适合内部工具、Agent 状态监控和自动化脚本运行提示。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="screens" class="section">
+        <article class="showcase">
+          <img src="assets/04_widget.png" alt="菜单栏状态灯和悬浮窗预览" />
+          <div class="showcase-text">
+            <h3>小而清晰的悬浮状态灯</h3>
+            <p>常亮、脉冲、熄灭，用最直观的方式展示当前任务状态。状态灯可以置顶，也可以随时隐藏。</p>
+            <div class="tag-list">
+              <span class="tag">菜单栏</span>
+              <span class="tag">悬浮窗</span>
+              <span class="tag">低打扰</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="showcase">
+          <div class="showcase-text">
+            <h3>显示效果可调</h3>
+            <p>窗口大小、透明度、动画速度都可以按你的桌面习惯调整，同时支持 Dock 图标和 Touch Bar 显示。</p>
+            <div class="tag-list">
+              <span class="tag">窗口大小</span>
+              <span class="tag">透明度</span>
+              <span class="tag">动画速度</span>
+            </div>
+          </div>
+          <img src="assets/03_display.png" alt="显示效果设置面板" />
+        </article>
+
+        <article class="showcase">
+          <img src="assets/02_rules.png" alt="状态规则设置面板" />
+          <div class="showcase-text">
+            <h3>状态规则开箱即用，也能逐项恢复</h3>
+            <p>默认规则覆盖日常状态、工作流程、需要关注和会话事件。你可以自定义颜色和闪烁方式，也可以随时恢复默认。</p>
+            <div class="tag-list">
+              <span class="tag">空闲</span>
+              <span class="tag">思考中</span>
+              <span class="tag">工作中</span>
+              <span class="tag">关闭</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="showcase">
+          <div class="showcase-text">
+            <h3>为技术型工作流设计</h3>
+            <p>把开机启动、始终置顶、状态规则和 Agent hook 放在一起，适合长时间跑 Codex、内部工具或自动化脚本。</p>
+            <div class="tag-list">
+              <span class="tag">Codex</span>
+              <span class="tag">Claude Code</span>
+              <span class="tag">Automation</span>
+            </div>
+          </div>
+          <img src="assets/05_workflow.png" alt="技术型工作流宣传图" />
+        </article>
+      </section>
+
+      <section id="download" class="section">
+        <div class="download">
+          <div>
+            <p class="eyebrow">Download</p>
+            <h2>下载 macOS 安装包</h2>
+            <p class="section-copy">
+              Release 由 GitHub Actions 在 macOS runner 上构建。打 tag 会自动生成安装包和 SHA256 校验文件；手动运行 workflow 也会上传构建产物。
+            </p>
+            <div class="terminal" aria-label="安装命令示例">
+              <pre>open "/Applications/Signal Light.app"
+signal-light play working
+signal-light play permission</pre>
+            </div>
+          </div>
+          <div class="download-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg"
+            >
+              下载最新安装包
+            </a>
+            <a class="button button-secondary" href="https://github.com/qipeijun/vibecoding-signal-light/releases">
+              所有版本
+            </a>
+            <a class="button button-secondary" href="https://github.com/qipeijun/vibecoding-signal-light">
+              GitHub 仓库
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        基于开源项目
+        <a href="https://github.com/starlight36/vibecoding-signal-light">starlight36/vibecoding-signal-light</a>
+        二次开发。感谢原项目提供的灵感和基础方向。
+      </p>
+      <p>当前安装包未声明 Developer ID 公证时，macOS 可能需要在“隐私与安全性”里手动允许打开。</p>
+    </footer>
+  </body>
+</html>
