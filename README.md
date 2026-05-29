@@ -4,7 +4,7 @@
 
 Vibecoding Signal Light 是一个 macOS 原生状态灯工具，用悬浮三色灯、菜单栏图标和配置面板展示 Codex、Claude Code 等本地 Agent 的实时状态。它适合长时间让 Agent 跑工具、改文件、等权限或等待你继续回复的场景：不用反复切回终端，也能一眼知道现在该不该处理。
 
-项目预览地址：[qipeijun.github.io/vibecoding-signal-light](https://qipeijun.github.io/vibecoding-signal-light/)
+项目预览地址：[在线预览](https://qipeijun.github.io/vibecoding-signal-light/)
 
 
 ## 界面预览
@@ -27,9 +27,13 @@ Vibecoding Signal Light 是一个 macOS 原生状态灯工具，用悬浮三色�
 
 ### 演示视频
 
-[![状态灯实物演示](docs/images/demo.jpg)](docs/videos/signal-light-demo-1.mp4)
+<video src="https://qipeijun.github.io/vibecoding-signal-light/videos/signal-light-demo-1.mp4" controls muted playsinline width="720">
+  <a href="https://qipeijun.github.io/vibecoding-signal-light/videos/signal-light-demo-1.mp4">查看演示视频 1</a>
+</video>
 
-[查看演示视频 1](docs/videos/signal-light-demo-1.mp4) / [查看演示视频 2](docs/videos/signal-light-demo-2.mp4)
+<video src="https://qipeijun.github.io/vibecoding-signal-light/videos/signal-light-demo-2.mp4" controls muted playsinline width="720">
+  <a href="https://qipeijun.github.io/vibecoding-signal-light/videos/signal-light-demo-2.mp4">查看演示视频 2</a>
+</video>
 
 ## 功能特性
 
