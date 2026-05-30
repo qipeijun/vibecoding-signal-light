@@ -15,10 +15,6 @@ enum SessionSourceActivation {
                 && now - record.updatedAt <= sessionTTL
         }
 
-        if let targetSignals = targetSignals(for: aggregate) {
-            return latestRecord(in: candidates, matching: targetSignals)?.source
-        }
-
         return candidates.max { $0.updatedAt < $1.updatedAt }?.source
     }
 
@@ -44,28 +40,6 @@ enum SessionSourceActivation {
         }
 
         openBundleIdentifier(bundleIdentifier)
-    }
-
-    private static func targetSignals(for aggregate: SignalState) -> Set<String>? {
-        switch aggregate {
-        case .permission, .blocked:
-            return redSignals
-        case .attention:
-            return yellowSignals
-        case .thinking, .working, .toolDone:
-            return workingSignals
-        case .idle, .done, .sessionStart, .sessionEnd, .off:
-            return nil
-        }
-    }
-
-    private static func latestRecord(
-        in records: [SessionRecord],
-        matching signals: Set<String>
-    ) -> SessionRecord? {
-        records
-            .filter { signals.contains($0.signal) }
-            .max { $0.updatedAt < $1.updatedAt }
     }
 
     private static func runningApplication(

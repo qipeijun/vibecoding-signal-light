@@ -35,7 +35,7 @@ final class SettingsTabViewController: NSViewController {
         var subtitle: String {
             switch self {
             case .info:
-                return "查看当前聚合状态、来源程序、模型和最后更新时间。"
+                return "查看最近一次 Agent 状态，以及它来自哪个应用和模型。"
             case .display:
                 return "控制悬浮窗、透明度、动画速度、Dock 和 Touch Bar。"
             case .agent:

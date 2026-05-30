@@ -176,34 +176,34 @@ def test_success_status_does_not_become_unknown_signal() -> None:
     assert signal == "tool_done"
 
 
-def test_aggregate_keeps_attention_over_other_working_session() -> None:
+def test_aggregate_uses_latest_working_over_old_attention() -> None:
     aggregate = aggregate_sessions(
         {
             "a": {"signal": "attention", "updated_at": 1},
-            "b": {"signal": "working", "updated_at": 1},
+            "b": {"signal": "working", "updated_at": 2},
         }
     )
 
-    assert aggregate == "attention"
+    assert aggregate == "working"
 
 
-def test_aggregate_keeps_permission_over_attention_and_working() -> None:
+def test_aggregate_uses_latest_attention_over_old_permission() -> None:
     aggregate = aggregate_sessions(
         {
             "a": {"signal": "attention", "updated_at": 1},
-            "b": {"signal": "working", "updated_at": 1},
-            "c": {"signal": "permission", "updated_at": 1},
+            "b": {"signal": "working", "updated_at": 2},
+            "c": {"signal": "permission", "updated_at": 0},
         }
     )
 
-    assert aggregate == "permission"
+    assert aggregate == "working"
 
 
-def test_aggregate_returns_working_when_any_session_is_working() -> None:
+def test_aggregate_maps_latest_tool_done_to_working() -> None:
     aggregate = aggregate_sessions(
         {
             "a": {"signal": "idle", "updated_at": 1},
-            "b": {"signal": "tool_done", "updated_at": 1},
+            "b": {"signal": "tool_done", "updated_at": 2},
         }
     )
 
@@ -283,28 +283,26 @@ def test_cli_codex_hook_without_event_uses_stdin_event(monkeypatch) -> None:
     assert calls == [("permission", "session-a", True, True, None)]
 
 
-def test_apply_session_signal_preserves_attention_over_other_work(tmp_path, monkeypatch) -> None:
+def test_apply_session_signal_uses_newer_work_over_old_attention(tmp_path, monkeypatch) -> None:
     applied: list[str] = []
     monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
     monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
     monkeypatch.setattr(runtime, "LOCK_FILE", tmp_path / "state.lock")
     monkeypatch.setattr(runtime, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
-    monkeypatch.setattr(cli, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
     monkeypatch.setattr(cli, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
 
     assert apply_session_signal("session-a", "attention") == "attention"
-    assert apply_session_signal("session-b", "working") == "attention"
+    assert apply_session_signal("session-b", "working") == "working"
 
-    assert applied == ["attention", "attention"]
+    assert applied == ["attention", "working"]
 
 
-def test_apply_session_signal_escalates_permission_over_attention(tmp_path, monkeypatch) -> None:
+def test_apply_session_signal_uses_newer_permission_over_attention(tmp_path, monkeypatch) -> None:
     applied: list[str] = []
     monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
     monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
     monkeypatch.setattr(runtime, "LOCK_FILE", tmp_path / "state.lock")
     monkeypatch.setattr(runtime, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
-    monkeypatch.setattr(cli, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
     monkeypatch.setattr(cli, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
 
     assert apply_session_signal("session-a", "attention") == "attention"

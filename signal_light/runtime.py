@@ -135,19 +135,26 @@ def write_current_status(signal_name: str, *, updated_at: float | None = None) -
 
 
 def aggregate_sessions(sessions: dict[str, object]) -> str:
-    signals = []
+    latest_signal = None
+    latest_updated_at = None
     for value in sessions.values():
         if isinstance(value, dict):
             signal_name = value.get("signal")
-            if isinstance(signal_name, str):
-                signals.append(signal_name)
+            updated_at = value.get("updated_at")
+            if not isinstance(signal_name, str) or not isinstance(updated_at, (int, float)):
+                continue
+            if latest_updated_at is None or updated_at > latest_updated_at:
+                latest_signal = signal_name
+                latest_updated_at = updated_at
 
-    if any(signal_name in RED_SIGNALS for signal_name in signals):
-        return "permission"
-    if any(signal_name in YELLOW_SIGNALS for signal_name in signals):
-        return "attention"
-    if any(signal_name in WORKING_SIGNALS for signal_name in signals):
+    if latest_signal in WORKING_SIGNALS:
         return "working"
+    if latest_signal in {"done", "idle", "session_start", "session_end", "off"}:
+        return "idle"
+    if latest_signal == "blocked":
+        return "permission"
+    if latest_signal in SIGNALS:
+        return latest_signal
     return "idle"
 
 

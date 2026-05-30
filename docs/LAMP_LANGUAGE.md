@@ -63,6 +63,10 @@ The file shape is fixed:
 
 The Swift app only accepts known signal names and ignores unknown values.
 
+When multiple sessions are tracked, the aggregate state follows the most recently
+updated valid session. This keeps a stale prompt or closed app from holding the
+lamp in an old warning state after a newer conversation starts.
+
 ## Codex Hook Mapping
 
 | Codex event | Signal | Light |

@@ -39,8 +39,8 @@ final class StatusInfoViewController: NSViewController {
 
         let record = preferredRecord()
         stateValue.stringValue = stateStore.state.displayName
-        sourceValue.stringValue = sourceName(from: record) ?? "未识别来源"
-        modelValue.stringValue = cleanText(record?.model) ?? "未提供"
+        sourceValue.stringValue = sourceName(from: record) ?? "当前状态未提供来源"
+        modelValue.stringValue = cleanText(record?.model) ?? "当前状态未提供模型"
         updatedValue.stringValue = formattedTimestamp(stateStore.updatedAt ?? record?.updatedAt)
         directoryValue.stringValue = stateStore.stateDirectoryURL.path
     }
@@ -52,17 +52,17 @@ final class StatusInfoViewController: NSViewController {
         stack.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 8, right: 4)
         stack.alignment = .leading
 
-        stack.addArrangedSubview(makeSectionTitle("当前工作状态"))
+        stack.addArrangedSubview(makeSectionTitle("状态详情"))
         stack.addArrangedSubview(makeRow(title: "状态", value: stateValue, emphasize: true))
         stack.addArrangedSubview(makeRow(title: "来源程序", value: sourceValue))
         stack.addArrangedSubview(makeRow(title: "模型", value: modelValue))
         stack.addArrangedSubview(makeRow(title: "最后更新", value: updatedValue))
 
         stack.addArrangedSubview(makeSeparator())
-        stack.addArrangedSubview(makeSectionTitle("状态文件"))
-        stack.addArrangedSubview(makeRow(title: "目录", value: directoryValue, selectable: true))
+        stack.addArrangedSubview(makeSectionTitle("状态数据"))
+        stack.addArrangedSubview(makeRow(title: "状态目录", value: directoryValue, selectable: true))
 
-        let hint = NSTextField(labelWithString: "状态来自本机 hook 写入的 current_status.json 与 sessions.json。")
+        let hint = NSTextField(labelWithString: "状态由本机 Agent hook 写入，菜单栏和悬浮灯会实时读取这里的数据。")
         hint.font = NSFont.systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
         hint.lineBreakMode = .byWordWrapping
@@ -82,32 +82,10 @@ final class StatusInfoViewController: NSViewController {
     private func preferredRecord() -> SessionRecord? {
         let agent = configStore.effectiveAgentConfig(from: config)
         let now = Date().timeIntervalSince1970
-        let candidates = stateStore.sessionState.sessions.values.filter { record in
+        return stateStore.sessionState.sessions.values.filter { record in
             !sessionEndSignals.contains(record.signal)
                 && now - record.updatedAt <= agent.sessionTTLSeconds
-        }
-
-        if let targetSignals = targetSignals(for: stateStore.state),
-           let matching = candidates
-            .filter({ targetSignals.contains($0.signal) })
-            .max(by: { $0.updatedAt < $1.updatedAt }) {
-            return matching
-        }
-
-        return candidates.max(by: { $0.updatedAt < $1.updatedAt })
-    }
-
-    private func targetSignals(for state: SignalState) -> Set<String>? {
-        switch state {
-        case .permission, .blocked:
-            return redSignals
-        case .attention:
-            return yellowSignals
-        case .thinking, .working, .toolDone:
-            return workingSignals
-        case .idle, .done, .sessionStart, .sessionEnd, .off:
-            return nil
-        }
+        }.max(by: { $0.updatedAt < $1.updatedAt })
     }
 
     private func sourceName(from record: SessionRecord?) -> String? {
@@ -119,7 +97,7 @@ final class StatusInfoViewController: NSViewController {
 
     private func formattedTimestamp(_ value: Double?) -> String {
         guard let value else {
-            return "未更新"
+            return "暂无更新时间"
         }
         let formatter = DateFormatter()
         formatter.dateStyle = .medium

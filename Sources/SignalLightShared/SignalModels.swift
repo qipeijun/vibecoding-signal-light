@@ -309,15 +309,24 @@ private func frame(color: SignalColor, brightness: CGFloat) -> SignalFrame {
 // MARK: - 会话聚合
 
 public func aggregateSessions(_ sessions: [String: SessionRecord]) -> String {
-    let signals = sessions.values.map(\.signal)
-    if signals.contains(where: { redSignals.contains($0) }) {
+    guard let latest = sessions.values.max(by: { $0.updatedAt < $1.updatedAt }) else {
+        return "idle"
+    }
+
+    if workingSignals.contains(latest.signal) {
+        return "working"
+    }
+    if latest.signal == "done" || latest.signal == "idle" || latest.signal == "session_start" {
+        return "idle"
+    }
+    if latest.signal == "session_end" || latest.signal == "off" {
+        return "idle"
+    }
+    if latest.signal == "blocked" {
         return "permission"
     }
-    if signals.contains(where: { yellowSignals.contains($0) }) {
-        return "attention"
-    }
-    if signals.contains(where: { workingSignals.contains($0) }) {
-        return "working"
+    if validSignals.contains(latest.signal) {
+        return latest.signal
     }
     return "idle"
 }
