@@ -3,31 +3,39 @@ import SignalLightShared
 
 final class SettingsTabViewController: NSViewController {
     private enum Section: Int, CaseIterable {
+        case info
         case display
         case agent
         case rules
         case diagnostics
+        case about
 
         var title: String {
             switch self {
+            case .info: return "信息"
             case .display: return "显示"
             case .agent: return "Agent"
             case .rules: return "规则"
             case .diagnostics: return "诊断"
+            case .about: return "关于"
             }
         }
 
         var heading: String {
             switch self {
+            case .info: return "当前状态"
             case .display: return "悬浮窗与状态栏"
             case .agent: return "Agent 集成"
             case .rules: return "状态灯规则"
             case .diagnostics: return "配置诊断"
+            case .about: return "关于 Signal Light"
             }
         }
 
         var subtitle: String {
             switch self {
+            case .info:
+                return "查看当前聚合状态、来源程序、模型和最后更新时间。"
             case .display:
                 return "控制悬浮窗、透明度、动画速度、Dock 和 Touch Bar。"
             case .agent:
@@ -36,12 +44,15 @@ final class SettingsTabViewController: NSViewController {
                 return "为 11 个已知状态指定颜色与闪烁方式。"
             case .diagnostics:
                 return "检查配置文件、状态目录和修复写入问题。"
+            case .about:
+                return "版本、项目主页和应用说明。"
             }
         }
     }
 
     private let configStore: SignalLightConfigStore
     private var currentConfig: SignalLightConfig
+    private var stateStore: SignalStateStore
     private let segmentedControl = NSSegmentedControl(
         labels: Section.allCases.map(\.title),
         trackingMode: .selectOne,
@@ -53,9 +64,10 @@ final class SettingsTabViewController: NSViewController {
     private let contentContainer = NSView()
     private var currentChild: NSViewController?
 
-    init(configStore: SignalLightConfigStore, config: SignalLightConfig) {
+    init(configStore: SignalLightConfigStore, config: SignalLightConfig, stateStore: SignalStateStore) {
         self.configStore = configStore
         self.currentConfig = config
+        self.stateStore = stateStore
         super.init(nibName: nil, bundle: nil)
         preferredContentSize = NSSize(width: 680, height: 540)
     }
@@ -71,7 +83,13 @@ final class SettingsTabViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         buildUI()
-        selectSection(.display)
+        selectSection(.info)
+    }
+
+    func refreshRuntimeStatus(config: SignalLightConfig, stateStore: SignalStateStore) {
+        currentConfig = config
+        self.stateStore = stateStore
+        (currentChild as? StatusInfoViewController)?.update(config: config, stateStore: stateStore)
     }
 
     private func buildUI() {
@@ -95,21 +113,16 @@ final class SettingsTabViewController: NSViewController {
         subtitleLabel.lineBreakMode = .byWordWrapping
         subtitleLabel.maximumNumberOfLines = 2
 
-        let versionLabel = NSTextField(labelWithString: SignalLightVersion.displayString)
-        versionLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        versionLabel.textColor = .secondaryLabelColor
-
         segmentedControl.segmentStyle = .rounded
-        segmentedControl.selectedSegment = Section.display.rawValue
+        segmentedControl.selectedSegment = Section.info.rawValue
         segmentedControl.target = self
         segmentedControl.action = #selector(sectionChanged(_:))
         for section in Section.allCases {
-            segmentedControl.setWidth(112, forSegment: section.rawValue)
+            segmentedControl.setWidth(88, forSegment: section.rawValue)
         }
 
         topRow.addArrangedSubview(segmentedControl)
         topRow.addArrangedSubview(NSView())
-        topRow.addArrangedSubview(versionLabel)
         header.addArrangedSubview(topRow)
         header.addArrangedSubview(headingLabel)
         header.addArrangedSubview(subtitleLabel)
@@ -144,6 +157,12 @@ final class SettingsTabViewController: NSViewController {
 
         let child: NSViewController
         switch section {
+        case .info:
+            child = StatusInfoViewController(
+                configStore: configStore,
+                config: currentConfig,
+                stateStore: stateStore
+            )
         case .display:
             child = DisplaySettingsViewController(
                 config: currentConfig.display,
@@ -176,6 +195,8 @@ final class SettingsTabViewController: NSViewController {
                 configStore: configStore,
                 config: currentConfig
             )
+        case .about:
+            child = AboutViewController()
         }
 
         replaceContent(with: child)

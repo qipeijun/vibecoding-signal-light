@@ -146,7 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
         popover.contentViewController = SettingsTabViewController(
             configStore: configStore,
-            config: config
+            config: config,
+            stateStore: stateStore
         )
         popover.show(relativeTo: statusItem.button!.bounds, of: statusItem.button!, preferredEdge: .minY)
         settingsPopover = popover
@@ -289,6 +290,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let currentFrame = frame(for: stateStore.state, tick: tick, rules: config.statusRules)
         statusItem.button?.image = makeStatusIcon(frameState: currentFrame)
         viewController.update(frameState: currentFrame)
+        (settingsPopover?.contentViewController as? SettingsTabViewController)?
+            .refreshRuntimeStatus(config: config, stateStore: stateStore)
     }
 
     @objc private func togglePanel() {

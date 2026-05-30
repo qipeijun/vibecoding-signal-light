@@ -169,7 +169,8 @@ private func runCodexHook(args: [String], store: StateStore) throws -> Int {
     _ = try store.applySessionSignal(
         sessionKey: key,
         signalName: signal,
-        source: currentSessionSource(preference: .codex)
+        source: currentSessionSource(preference: .codex),
+        model: modelName(payload: payload, environment: ProcessInfo.processInfo.environment)
     )
     return 0
 }
@@ -189,7 +190,8 @@ private func runClaudeHook(args: [String], store: StateStore) throws -> Int {
     _ = try store.applySessionSignal(
         sessionKey: key,
         signalName: signal,
-        source: currentSessionSource(preference: .claudeCode)
+        source: currentSessionSource(preference: .claudeCode),
+        model: modelName(payload: payload, environment: ProcessInfo.processInfo.environment)
     )
     return 0
 }

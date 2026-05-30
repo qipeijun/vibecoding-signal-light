@@ -39,6 +39,23 @@ private let failureSignals: [String: String] = [
     "exception": "blocked",
 ]
 
+private let modelPayloadKeys = [
+    "model",
+    "model_name",
+    "ai_model",
+    "llm_model",
+    "selected_model",
+    "provider_model",
+]
+
+private let modelEnvironmentKeys = [
+    "SIGNAL_LIGHT_MODEL",
+    "CODEX_MODEL",
+    "OPENAI_MODEL",
+    "ANTHROPIC_MODEL",
+    "CLAUDE_MODEL",
+]
+
 func readPayload(stdinText: String) -> [String: Any] {
     guard let data = stdinText.data(using: .utf8),
           let parsed = try? JSONSerialization.jsonObject(with: data),
@@ -148,6 +165,22 @@ func eventFromArgs(_ args: [String], payload: [String: Any], keys: [String], fal
         }
     }
     return fallback
+}
+
+func modelName(payload: [String: Any], environment: [String: String]) -> String? {
+    if let direct = firstString(payload, keys: modelPayloadKeys) {
+        return direct
+    }
+    if let nested = findNestedString(payload, keys: modelPayloadKeys) {
+        return nested
+    }
+    for key in modelEnvironmentKeys {
+        if let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !value.isEmpty {
+            return value
+        }
+    }
+    return nil
 }
 
 private func firstString(_ payload: [String: Any], keys: [String]) -> String? {

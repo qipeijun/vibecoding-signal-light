@@ -6,7 +6,8 @@ import pytest
 from signal_light.agent_signals import SIGNALS
 from signal_light import cli
 from signal_light.claude_code_hook import ClaudeCodeHookInput, choose_signal as choose_claude_signal
-from signal_light.codex_hook import CodexHookInput, choose_signal, session_key
+from signal_light.claude_code_hook import model_name as claude_model_name
+from signal_light.codex_hook import CodexHookInput, choose_signal, model_name as codex_model_name, session_key
 from signal_light import runtime
 from signal_light.runtime import aggregate_sessions, apply_session_signal, write_current_status
 
@@ -251,35 +252,35 @@ def test_session_key_ignores_turn_id_and_uses_cwd() -> None:
 
 
 def test_cli_codex_hook_uses_session_aware_path(monkeypatch) -> None:
-    calls: list[tuple[str, str, bool, bool]] = []
+    calls: list[tuple[str, str, bool, bool, str | None]] = []
     monkeypatch.setattr("sys.stdin", io.StringIO('{"session_id":"session-a","event":"Stop"}'))
     monkeypatch.setattr(
         cli,
         "play_hook_signal",
-        lambda signal_name, *, session_key, dry_run=False, quiet=False: calls.append(
-            (signal_name, session_key, dry_run, quiet)
+        lambda signal_name, *, session_key, dry_run=False, quiet=False, model_name=None: calls.append(
+            (signal_name, session_key, dry_run, quiet, model_name)
         )
         or 0,
     )
 
     assert cli.main(["codex-hook", "--dry-run"]) == 0
-    assert calls == [("done", "session-a", True, True)]
+    assert calls == [("done", "session-a", True, True, None)]
 
 
 def test_cli_codex_hook_without_event_uses_stdin_event(monkeypatch) -> None:
-    calls: list[tuple[str, str, bool, bool]] = []
+    calls: list[tuple[str, str, bool, bool, str | None]] = []
     monkeypatch.setattr("sys.stdin", io.StringIO('{"session_id":"session-a","event":"PermissionRequest"}'))
     monkeypatch.setattr(
         cli,
         "play_hook_signal",
-        lambda signal_name, *, session_key, dry_run=False, quiet=False: calls.append(
-            (signal_name, session_key, dry_run, quiet)
+        lambda signal_name, *, session_key, dry_run=False, quiet=False, model_name=None: calls.append(
+            (signal_name, session_key, dry_run, quiet, model_name)
         )
         or 0,
     )
 
     assert cli.main(["codex-hook", "--dry-run"]) == 0
-    assert calls == [("permission", "session-a", True, True)]
+    assert calls == [("permission", "session-a", True, True, None)]
 
 
 def test_apply_session_signal_preserves_attention_over_other_work(tmp_path, monkeypatch) -> None:
@@ -416,6 +417,36 @@ def test_session_source_is_preserved_by_python_runtime(tmp_path, monkeypatch) ->
     updated = json.loads((tmp_path / "sessions.json").read_text())
     assert updated["sessions"]["session-a"]["source"] == source
     assert applied == ["working"]
+
+
+def test_session_model_is_written_and_preserved_by_python_runtime(tmp_path, monkeypatch) -> None:
+    applied: list[str] = []
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(runtime, "LOCK_FILE", tmp_path / "state.lock")
+    monkeypatch.setattr(runtime, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
+
+    assert apply_session_signal("session-a", "working", model_name="gpt-5") == "working"
+    assert apply_session_signal("session-a", "tool_done") == "working"
+
+    updated = json.loads((tmp_path / "sessions.json").read_text())
+    assert updated["sessions"]["session-a"]["model"] == "gpt-5"
+    assert applied == ["working", "working"]
+
+
+def test_codex_model_name_prefers_payload_over_environment() -> None:
+    hook_input = CodexHookInput(
+        event_name="PreToolUse",
+        payload={"request": {"model_name": "gpt-5-codex"}},
+    )
+
+    assert codex_model_name(hook_input, {"SIGNAL_LIGHT_MODEL": "fallback-model"}) == "gpt-5-codex"
+
+
+def test_claude_model_name_uses_environment_fallback() -> None:
+    hook_input = ClaudeCodeHookInput(event_name="PreToolUse", payload={})
+
+    assert claude_model_name(hook_input, {"ANTHROPIC_MODEL": "claude-opus-4.1"}) == "claude-opus-4.1"
 
 
 def test_apply_session_signal_keeps_permission_on_turn_end(tmp_path, monkeypatch) -> None:

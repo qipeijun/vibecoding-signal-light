@@ -72,7 +72,13 @@ def apply_signal(signal: AgentSignal, *, speed: float = 1.0) -> None:
     write_current_status(signal.name)
 
 
-def apply_session_signal(session_key: str, signal_name: str, *, speed: float = 1.0) -> str:
+def apply_session_signal(
+    session_key: str,
+    signal_name: str,
+    *,
+    speed: float = 1.0,
+    model_name: str | None = None,
+) -> str:
     """Update one Codex session state, then apply the aggregated global state."""
     with _state_lock():
         state = _read_session_state()
@@ -90,12 +96,17 @@ def apply_session_signal(session_key: str, signal_name: str, *, speed: float = 1
         else:
             previous = sessions.get(session_key)
             source = previous.get("source") if isinstance(previous, dict) else None
+            previous_model = previous.get("model") if isinstance(previous, dict) else None
             sessions[session_key] = {
                 "signal": signal_name,
                 "updated_at": now,
             }
             if isinstance(source, dict):
                 sessions[session_key]["source"] = source
+            if model_name:
+                sessions[session_key]["model"] = model_name
+            elif isinstance(previous_model, str) and previous_model.strip():
+                sessions[session_key]["model"] = previous_model
 
         aggregate = aggregate_sessions(sessions)
         _write_session_state(state)

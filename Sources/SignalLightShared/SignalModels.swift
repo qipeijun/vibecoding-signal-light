@@ -29,6 +29,31 @@ public enum SignalState: String, Codable, CaseIterable {
             return .off
         }
     }
+
+    public var displayName: String {
+        switch self {
+        case .idle:
+            return "空闲"
+        case .thinking:
+            return "思考中"
+        case .working, .toolDone:
+            return "工作中"
+        case .attention:
+            return "等待关注"
+        case .permission:
+            return "等待授权"
+        case .blocked:
+            return "已阻塞"
+        case .done:
+            return "已完成"
+        case .sessionStart:
+            return "会话开始"
+        case .sessionEnd:
+            return "会话结束"
+        case .off:
+            return "已关闭"
+        }
+    }
 }
 
 public enum SignalColor {
@@ -166,17 +191,20 @@ public struct SessionRecord: Codable {
     public var signal: String
     public var updatedAt: Double
     public var source: SessionSource?
+    public var model: String?
 
     enum CodingKeys: String, CodingKey {
         case signal
         case updatedAt = "updated_at"
         case source
+        case model
     }
 
-    public init(signal: String, updatedAt: Double, source: SessionSource? = nil) {
+    public init(signal: String, updatedAt: Double, source: SessionSource? = nil, model: String? = nil) {
         self.signal = signal
         self.updatedAt = updatedAt
         self.source = source
+        self.model = model
     }
 }
 

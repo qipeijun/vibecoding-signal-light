@@ -28,6 +28,23 @@ FAILURE_SIGNALS = {
     "exception": "blocked",
 }
 
+MODEL_PAYLOAD_KEYS = (
+    "model",
+    "model_name",
+    "ai_model",
+    "llm_model",
+    "selected_model",
+    "provider_model",
+)
+
+MODEL_ENVIRONMENT_KEYS = (
+    "SIGNAL_LIGHT_MODEL",
+    "CODEX_MODEL",
+    "OPENAI_MODEL",
+    "ANTHROPIC_MODEL",
+    "CLAUDE_MODEL",
+)
+
 
 @dataclass(frozen=True)
 class CodexHookInput:
@@ -117,6 +134,23 @@ def session_key(hook_input: CodexHookInput, environ: Mapping[str, str]) -> str:
         return f"cwd:{cwd.strip()}"
 
     return "global"
+
+
+def model_name(hook_input: CodexHookInput, environ: Mapping[str, str]) -> str | None:
+    direct = _first_string(hook_input.payload, MODEL_PAYLOAD_KEYS)
+    if direct:
+        return direct.strip()
+
+    nested = _find_nested_string(hook_input.payload, MODEL_PAYLOAD_KEYS)
+    if nested:
+        return nested.strip()
+
+    for key in MODEL_ENVIRONMENT_KEYS:
+        value = environ.get(key)
+        if value and value.strip():
+            return value.strip()
+
+    return None
 
 
 def _event_from_args(argv: list[str]) -> str | None:
@@ -227,6 +261,7 @@ def main() -> int:
         session_key=key,
         dry_run=os.environ.get("SIGNAL_LIGHT_DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"},
         quiet=True,
+        model_name=model_name(hook_input, os.environ),
     )
 
 

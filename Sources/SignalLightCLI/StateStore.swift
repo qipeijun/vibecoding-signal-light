@@ -38,7 +38,12 @@ final class StateStore {
         try writeCurrentStatus(signal)
     }
 
-    func applySessionSignal(sessionKey: String, signalName: String, source: SessionSource? = nil) throws -> String {
+    func applySessionSignal(
+        sessionKey: String,
+        signalName: String,
+        source: SessionSource? = nil,
+        model: String? = nil
+    ) throws -> String {
         try withLock {
             var state = readSessionState()
             let now = Date().timeIntervalSince1970
@@ -56,10 +61,12 @@ final class StateStore {
                     throw SignalCLIError.message("Unknown signal: \(signalName)")
                 }
                 let existingSource = state.sessions[sessionKey]?.source
+                let existingModel = state.sessions[sessionKey]?.model
                 state.sessions[sessionKey] = SessionRecord(
                     signal: signalName,
                     updatedAt: now,
-                    source: source ?? existingSource
+                    source: source ?? existingSource,
+                    model: model ?? existingModel
                 )
             }
 
@@ -105,6 +112,9 @@ final class StateStore {
                         sourcePayload["localized_name"] = localizedName
                     }
                     payload["source"] = sourcePayload
+                }
+                if let model = record.model {
+                    payload["model"] = model
                 }
                 return payload
             },

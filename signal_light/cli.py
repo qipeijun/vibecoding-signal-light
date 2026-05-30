@@ -72,23 +72,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return play_signal(args.signal, dry_run=args.dry_run, speed=args.speed, quiet=args.quiet)
     if args.command == "codex-hook":
         event = args.event_option or args.event
-        from signal_light.codex_hook import choose_signal, read_codex_hook_input, session_key
+        from signal_light.codex_hook import choose_signal, model_name, read_codex_hook_input, session_key
 
         hook_argv = ["signal-light", "--event", event] if event else ["signal-light"]
         hook_input = read_codex_hook_input(hook_argv, sys.stdin.read(), os.environ)
         signal = choose_signal(hook_input)
         key = session_key(hook_input, os.environ)
-        return play_hook_signal(signal, session_key=key, dry_run=args.dry_run, quiet=True)
+        model = model_name(hook_input, os.environ)
+        return play_hook_signal(signal, session_key=key, dry_run=args.dry_run, quiet=True, model_name=model)
     if args.command == "claude-code-hook":
         event = args.event_option or args.event
         from signal_light.claude_code_hook import choose_signal as cc_choose_signal
+        from signal_light.claude_code_hook import model_name as cc_model_name
         from signal_light.claude_code_hook import read_hook_input, session_key as cc_session_key
 
         hook_argv = ["signal-light", "--event", event] if event else ["signal-light"]
         hook_input = read_hook_input(hook_argv, sys.stdin.read())
         signal = cc_choose_signal(hook_input)
         key = cc_session_key(hook_input, os.environ)
-        return play_hook_signal(signal, session_key=key, dry_run=args.dry_run, quiet=True)
+        model = cc_model_name(hook_input, os.environ)
+        return play_hook_signal(signal, session_key=key, dry_run=args.dry_run, quiet=True, model_name=model)
     if args.command == "status":
         print(json.dumps(read_session_snapshot(), ensure_ascii=False, indent=2))
         return 0
@@ -143,6 +146,7 @@ def play_hook_signal(
     dry_run: bool = False,
     speed: float = 1.0,
     quiet: bool = False,
+    model_name: str | None = None,
 ) -> int:
     signal = SIGNALS.get(signal_name)
     if signal is None and signal_name not in HOOK_CONTROL_SIGNALS:
@@ -162,7 +166,7 @@ def play_hook_signal(
         return 0
 
     try:
-        aggregate = apply_session_signal(session_key, signal_name, speed=speed)
+        aggregate = apply_session_signal(session_key, signal_name, speed=speed, model_name=model_name)
     except SignalLightError as exc:
         if not quiet:
             print(str(exc), file=sys.stderr)

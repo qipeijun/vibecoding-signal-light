@@ -37,6 +37,23 @@ STOP_REASON_SIGNAL = {
     "error": "blocked",
 }
 
+MODEL_PAYLOAD_KEYS = (
+    "model",
+    "model_name",
+    "ai_model",
+    "llm_model",
+    "selected_model",
+    "provider_model",
+)
+
+MODEL_ENVIRONMENT_KEYS = (
+    "SIGNAL_LIGHT_MODEL",
+    "CODEX_MODEL",
+    "OPENAI_MODEL",
+    "ANTHROPIC_MODEL",
+    "CLAUDE_MODEL",
+)
+
 
 @dataclass(frozen=True)
 class ClaudeCodeHookInput:
@@ -91,6 +108,23 @@ def session_key(hook_input: ClaudeCodeHookInput, environ: Mapping[str, str]) -> 
     return "global"
 
 
+def model_name(hook_input: ClaudeCodeHookInput, environ: Mapping[str, str]) -> str | None:
+    direct = _first_string(hook_input.payload, MODEL_PAYLOAD_KEYS)
+    if direct:
+        return direct
+
+    nested = _find_nested_string(hook_input.payload, MODEL_PAYLOAD_KEYS)
+    if nested:
+        return nested
+
+    for key in MODEL_ENVIRONMENT_KEYS:
+        value = environ.get(key)
+        if value and value.strip():
+            return value.strip()
+
+    return None
+
+
 def _event_from_args(argv: list[str]) -> str | None:
     for index, value in enumerate(argv):
         if value in {"--event", "-e"} and index + 1 < len(argv):
@@ -99,6 +133,31 @@ def _event_from_args(argv: list[str]) -> str | None:
             return value.split("=", 1)[1]
     if len(argv) >= 2 and not argv[1].startswith("-"):
         return argv[1]
+    return None
+
+
+def _first_string(payload: Mapping[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _find_nested_string(value: Any, keys: tuple[str, ...]) -> str | None:
+    if isinstance(value, Mapping):
+        direct = _first_string(value, keys)
+        if direct:
+            return direct
+        for child in value.values():
+            found = _find_nested_string(child, keys)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_nested_string(child, keys)
+            if found:
+                return found
     return None
 
 
@@ -114,6 +173,7 @@ def main() -> int:
         session_key=key,
         dry_run=os.environ.get("SIGNAL_LIGHT_DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"},
         quiet=True,
+        model_name=model_name(hook_input, os.environ),
     )
 
 
