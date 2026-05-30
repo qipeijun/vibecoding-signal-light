@@ -1,5 +1,6 @@
 import io
 import json
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,13 @@ from signal_light.claude_code_hook import model_name as claude_model_name
 from signal_light.codex_hook import CodexHookInput, choose_signal, model_name as codex_model_name, session_key
 from signal_light import runtime
 from signal_light.runtime import aggregate_sessions, apply_session_signal, write_current_status
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+def session_aggregation_cases() -> list[dict[str, object]]:
+    return json.loads((FIXTURE_DIR / "session_aggregation.json").read_text())
 
 
 class RecordingLight:
@@ -176,52 +184,17 @@ def test_success_status_does_not_become_unknown_signal() -> None:
     assert signal == "tool_done"
 
 
-def test_aggregate_uses_latest_working_over_old_attention() -> None:
-    aggregate = aggregate_sessions(
-        {
-            "a": {"signal": "attention", "updated_at": 1},
-            "b": {"signal": "working", "updated_at": 2},
-        }
-    )
-
-    assert aggregate == "working"
-
-
-def test_aggregate_uses_latest_attention_over_old_permission() -> None:
-    aggregate = aggregate_sessions(
-        {
-            "a": {"signal": "attention", "updated_at": 1},
-            "b": {"signal": "working", "updated_at": 2},
-            "c": {"signal": "permission", "updated_at": 0},
-        }
-    )
-
-    assert aggregate == "working"
-
-
-def test_aggregate_maps_latest_tool_done_to_working() -> None:
-    aggregate = aggregate_sessions(
-        {
-            "a": {"signal": "idle", "updated_at": 1},
-            "b": {"signal": "tool_done", "updated_at": 2},
-        }
-    )
-
-    assert aggregate == "working"
-
-
-def test_aggregate_returns_idle_for_empty_sessions() -> None:
-    assert aggregate_sessions({}) == "idle"
-
-
-def test_aggregate_returns_idle_when_only_done_sessions_remain() -> None:
-    aggregate = aggregate_sessions(
-        {
-            "a": {"signal": "done", "updated_at": 1},
-        }
-    )
-
-    assert aggregate == "idle"
+@pytest.mark.parametrize("case", session_aggregation_cases(), ids=lambda case: case["name"])
+def test_aggregate_sessions_matches_shared_contract(case: dict[str, object]) -> None:
+    sessions = dict(case["sessions"])
+    if "now" in case and "session_ttl_seconds" in case:
+        previous_ttl = runtime.SESSION_TTL_SECONDS
+        try:
+            runtime.SESSION_TTL_SECONDS = case["session_ttl_seconds"]
+            runtime._prune_sessions(sessions, case["now"])
+        finally:
+            runtime.SESSION_TTL_SECONDS = previous_ttl
+    assert aggregate_sessions(sessions) == case["expected_aggregate"]
 
 
 def test_session_key_prefers_payload_session_id() -> None:

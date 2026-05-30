@@ -1,0 +1,107 @@
+[
+  {
+    "name": "empty sessions return idle",
+    "sessions": {},
+    "expected_aggregate": "idle"
+  },
+  {
+    "name": "latest working beats older attention",
+    "sessions": {
+      "a": {
+        "signal": "attention",
+        "updated_at": 1
+      },
+      "b": {
+        "signal": "working",
+        "updated_at": 2
+      }
+    },
+    "expected_aggregate": "working"
+  },
+  {
+    "name": "stale red warning does not override newer working",
+    "sessions": {
+      "a": {
+        "signal": "attention",
+        "updated_at": 1
+      },
+      "b": {
+        "signal": "working",
+        "updated_at": 2
+      },
+      "c": {
+        "signal": "permission",
+        "updated_at": 0
+      }
+    },
+    "expected_aggregate": "working"
+  },
+  {
+    "name": "latest tool done maps to working",
+    "sessions": {
+      "a": {
+        "signal": "idle",
+        "updated_at": 1
+      },
+      "b": {
+        "signal": "tool_done",
+        "updated_at": 2
+      }
+    },
+    "expected_aggregate": "working"
+  },
+  {
+    "name": "latest done maps to idle",
+    "sessions": {
+      "a": {
+        "signal": "done",
+        "updated_at": 1
+      }
+    },
+    "expected_aggregate": "idle"
+  },
+  {
+    "name": "latest blocked maps to permission",
+    "sessions": {
+      "a": {
+        "signal": "working",
+        "updated_at": 1
+      },
+      "b": {
+        "signal": "blocked",
+        "updated_at": 2
+      }
+    },
+    "expected_aggregate": "permission"
+  },
+  {
+    "name": "unknown latest signal falls back to idle",
+    "sessions": {
+      "a": {
+        "signal": "working",
+        "updated_at": 1
+      },
+      "b": {
+        "signal": "mystery",
+        "updated_at": 2
+      }
+    },
+    "expected_aggregate": "idle"
+  },
+  {
+    "name": "expired warning is pruned before aggregation",
+    "now": 100,
+    "session_ttl_seconds": 10,
+    "sessions": {
+      "a": {
+        "signal": "permission",
+        "updated_at": 1
+      },
+      "b": {
+        "signal": "working",
+        "updated_at": 95
+      }
+    },
+    "expected_aggregate": "working"
+  }
+]

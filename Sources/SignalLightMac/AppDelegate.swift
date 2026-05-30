@@ -1,23 +1,7 @@
 import AppKit
-import CoreFoundation
-import Darwin
 import Dispatch
 import ServiceManagement
 import SignalLightShared
-
-private let statusChangedNotificationName = "com.vibecoding.signal-light.status-changed"
-private let statusChangedCFNotificationName = statusChangedNotificationName as CFString
-private let statusChangedNotification = Notification.Name(statusChangedNotificationName)
-
-private let statusChangedCallback: CFNotificationCallback = { _, observer, _, _, _ in
-    guard let observer else {
-        return
-    }
-    let delegate = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
-    DispatchQueue.main.async {
-        delegate.refreshStateAndViews()
-    }
-}
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let configStore = SignalLightConfigStore()
@@ -25,13 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var stateStore: SignalStateStore!
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let viewController = SignalViewController()
-    private var panel: SignalPanel?
+    private var floatingPanelCoordinator: FloatingPanelCoordinator?
+    private let stateDirectoryWatcher = StateDirectoryWatcher()
+    private var statusChangeObserver: StatusChangeObserver?
     private var animationTimer: DispatchSourceTimer?
-    private var stateDirectorySource: DispatchSourceFileSystemObject?
     private var lastFallbackRefresh = Date.distantPast
     private var lastWakeRefresh = Date.distantPast
     private var tick = 0
-    private var shouldShowPanel = true
     private var settingsPopover: NSPopover?
     private var contextMenu: NSMenu?
 
@@ -46,23 +30,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         buildStatusItem()
-        buildPanel()
+        buildFloatingPanel()
         applyDisplayConfig()
         syncLaunchAtLogin()
         viewController.showTouchBar = config.display.showTouchBar
         _ = stateStore.refresh()
         updateViews()
-        startDarwinStatusNotification()
+        startStatusChangeObserver()
         startStateDirectoryWatcher()
 
         startAnimationTimer()
-
-        DistributedNotificationCenter.default().addObserver(
-            self,
-            selector: #selector(signalStatusDidChange),
-            name: statusChangedNotification,
-            object: nil
-        )
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -101,9 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         animationTimer?.cancel()
-        stateDirectorySource?.cancel()
-        stopDarwinStatusNotification()
-        savePanelFrame()
+        stateDirectoryWatcher.stop()
+        statusChangeObserver?.stop()
+        floatingPanelCoordinator?.stop()
     }
 
     private func buildStatusItem() {
@@ -165,7 +142,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newStateDir = agent.stateDirectory
         if oldStateDir != newStateDir {
             stateStore = SignalStateStore(stateDirectory: newStateDir)
-            stateDirectorySource?.cancel()
             startStateDirectoryWatcher()
             _ = stateStore.refresh()
         }
@@ -186,20 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleClearSessions() {
         let agent = configStore.effectiveAgentConfig(from: config)
         let stateDir = URL(fileURLWithPath: agent.stateDirectory)
-        let sessionFile = stateDir.appendingPathComponent("sessions.json")
-        let currentStatusFile = stateDir.appendingPathComponent("current_status.json")
-
-        try? FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
-
-        let emptyState = SessionState(sessions: [:])
-        if let data = try? JSONEncoder().encode(emptyState) {
-            try? data.write(to: sessionFile, options: .atomic)
-        }
-
-        let idleStatus = CurrentStatus(aggregate: "idle", updatedAt: Date().timeIntervalSince1970)
-        if let data = try? JSONEncoder().encode(idleStatus) {
-            try? data.write(to: currentStatusFile, options: .atomic)
-        }
+        try? SignalLightStateFiles.clearSessionsAndWriteIdle(in: stateDir)
 
         _ = stateStore.refresh()
         tick = 0
@@ -225,49 +188,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         animationTimer = timer
     }
 
-    private func buildPanel() {
-        let frame = savedPanelFrame() ?? defaultPanelFrame()
-        let panel = SignalPanel(
-            contentRect: frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+    private func buildFloatingPanel() {
+        floatingPanelCoordinator = FloatingPanelCoordinator(
+            viewController: viewController,
+            config: config,
+            clickAction: { [weak self] in
+                self?.activateCurrentSourceApplication()
+            }
         )
-        panel.contentViewController = viewController
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.level = config.display.alwaysOnTop ? .screenSaver : .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.isMovableByWindowBackground = true
-        panel.hidesOnDeactivate = false
-        panel.worksWhenModal = true
-        panel.clickAction = { [weak self] in
-            self?.activateCurrentSourceApplication()
-        }
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(panelDidMove),
-            name: NSWindow.didMoveNotification,
-            object: panel
-        )
-
-        self.panel = panel
-        shouldShowPanel = config.display.showFloatingWindowAtStartup
-        if shouldShowPanel {
-            keepPanelFloating(force: true)
-        }
     }
 
     private func applyDisplayConfig() {
-        guard let panel else { return }
-        panel.level = config.display.alwaysOnTop ? .screenSaver : .floating
-        panel.alphaValue = config.display.opacity
-
-        let size = SignalLightView.preferredSize
-        let scaled = NSSize(width: size.width * config.display.windowScale, height: size.height * config.display.windowScale)
-        panel.setContentSize(scaled)
+        floatingPanelCoordinator?.applyDisplayConfig(config.display)
     }
 
     private func syncLaunchAtLogin() {
@@ -295,26 +227,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePanel() {
-        guard let panel else {
-            return
-        }
-        if panel.isVisible {
-            shouldShowPanel = false
-            savePanelFrame()
-            panel.orderOut(nil)
-        } else {
-            shouldShowPanel = true
-            keepPanelFloating(force: true)
-        }
+        floatingPanelCoordinator?.togglePanel(display: config.display)
     }
 
     @objc private func quit() {
-        savePanelFrame()
+        floatingPanelCoordinator?.savePanelFrame()
         NSApp.terminate(nil)
-    }
-
-    @objc private func panelDidMove() {
-        savePanelFrame()
     }
 
     @objc private func workspaceDidActivateApplication() {
@@ -325,53 +243,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recoverAfterWake()
     }
 
-    @objc private func signalStatusDidChange() {
-        refreshStateAndViews()
-    }
-
-    private func startDarwinStatusNotification() {
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
-        let observer = UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        CFNotificationCenterAddObserver(
-            center,
-            observer,
-            statusChangedCallback,
-            statusChangedCFNotificationName,
-            nil,
-            .deliverImmediately
-        )
-    }
-
-    private func stopDarwinStatusNotification() {
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
-        let observer = UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        CFNotificationCenterRemoveObserver(center, observer, CFNotificationName(statusChangedCFNotificationName), nil)
+    private func startStatusChangeObserver() {
+        let observer = StatusChangeObserver { [weak self] in
+            self?.refreshStateAndViews()
+        }
+        observer.start()
+        statusChangeObserver = observer
     }
 
     private func startStateDirectoryWatcher() {
-        try? FileManager.default.createDirectory(
-            at: stateStore.stateDirectoryURL,
-            withIntermediateDirectories: true
-        )
-
-        let descriptor = open(stateStore.stateDirectoryURL.path, O_EVTONLY)
-        guard descriptor >= 0 else {
-            return
-        }
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: descriptor,
-            eventMask: [.write, .delete, .rename, .extend, .attrib],
-            queue: .main
-        )
-        source.setEventHandler { [weak self] in
+        stateDirectoryWatcher.start(directoryURL: stateStore.stateDirectoryURL) { [weak self] in
             self?.refreshStateAndViews()
         }
-        source.setCancelHandler {
-            close(descriptor)
-        }
-        source.resume()
-        stateDirectorySource = source
     }
 
     func refreshStateAndViews() {
@@ -392,7 +275,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         animationTimer?.cancel()
         startAnimationTimer()
-        stateDirectorySource?.cancel()
         startStateDirectoryWatcher()
         refreshStateAndViews()
     }
@@ -433,41 +315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func keepPanelFloating(force: Bool = false) {
-        guard let panel, shouldShowPanel, force || panel.isVisible else {
-            return
-        }
-        panel.level = config.display.alwaysOnTop ? .screenSaver : .floating
-        panel.orderFrontRegardless()
-    }
-
-    private func savePanelFrame() {
-        guard let frame = panel?.frame else {
-            return
-        }
-        UserDefaults.standard.set(NSStringFromRect(frame), forKey: "SignalLightPanelFrame")
-    }
-
-    private func savedPanelFrame() -> NSRect? {
-        guard let value = UserDefaults.standard.string(forKey: "SignalLightPanelFrame") else {
-            return nil
-        }
-        var frame = NSRectFromString(value)
-        frame.size = panelSize
-        return frame.isEmpty ? nil : frame
-    }
-
-    private func defaultPanelFrame() -> NSRect {
-        let size = panelSize
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        return NSRect(
-            x: screenFrame.maxX - size.width - 18,
-            y: screenFrame.maxY - size.height - 42,
-            width: size.width,
-            height: size.height
-        )
-    }
-
-    private var panelSize: NSSize {
-        SignalLightView.preferredSize
+        floatingPanelCoordinator?.keepFloating(display: config.display, force: force)
     }
 }

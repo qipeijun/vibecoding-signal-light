@@ -85,6 +85,9 @@ jobs:
       - name: Swift 构建检查
         run: swift build --package-path .
 
+      - name: Swift 测试
+        run: swift test --package-path .
+
       - name: Python 测试
         run: PYTHONPATH=. uv run pytest
 

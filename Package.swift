@@ -26,6 +26,11 @@ let package = Package(
             name: "SignalLightCLI",
             dependencies: ["SignalLightShared"],
             path: "Sources/SignalLightCLI"
+        ),
+        .testTarget(
+            name: "SignalLightSharedTests",
+            dependencies: ["SignalLightShared"],
+            path: "tests/SignalLightSharedTests"
         )
     ]
 )

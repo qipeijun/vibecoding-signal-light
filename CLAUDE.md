@@ -42,7 +42,7 @@ echo '{"event":"PreToolUse"}' | ./scripts/claude-code-signal-hook  # Claude Code
 | 文件 | 职责 |
 | --- | --- |
 | `agent_signals.py` | 灯语定义 — 11 个 `AgentSignal`（`idle`, `thinking`, `working`, `tool_done`, `attention`, `permission`, `blocked`, `done`, `session_start`, `session_end`, `off`），每个信号包含帧序列和循环行为 |
-| `runtime.py` | 多会话状态管理。每个 Agent 会话独立追踪状态，按优先级聚合：`red > yellow > green flash > steady green`。写入 `current_status.json` |
+| `runtime.py` | 多会话状态管理。每个 Agent 会话独立追踪状态，以最近一次有效 hook 写入聚合状态。写入 `current_status.json` |
 | `cli.py` | CLI 入口（`signal-light` 命令），子命令：`play`/`list`/`status`/`codex-hook`/`claude-code-hook`/`test`/`app` |
 | `codex_hook.py` | Codex hook 适配器，解析 Codex hook 输入的 JSON/环境变量，映射到信号名，支持从 payload 的 status/error 字段检测失败 |
 | `claude_code_hook.py` | Claude Code hook 适配器，支持 `stop_reason` 检测（`max_tokens`/`error` → blocked） |
@@ -82,9 +82,7 @@ aggregate 必须是已知信号名，未知值会被 Swift 应用忽略。
 
 ### 多会话聚合
 
-```text
-red flashing (permission/blocked) > yellow flashing (attention) > green slow flash (thinking/working/tool_done) > steady green (idle)
-```
+多个会话同时存在时，整体灯语以最近一次有效 hook 写入为准，避免旧会话长期压住新会话。
 
 Hook 控制信号 `turn_end` 只清除非紧急会话；`idle`/`off` 播放会清除所有会话。
 

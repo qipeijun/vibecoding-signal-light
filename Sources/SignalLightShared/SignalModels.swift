@@ -330,3 +330,9 @@ public func aggregateSessions(_ sessions: [String: SessionRecord]) -> String {
     }
     return "idle"
 }
+
+public func pruneExpiredSessions(_ sessions: inout [String: SessionRecord], now: Double, sessionTTL: Double) {
+    sessions = sessions.filter { _, record in
+        now - record.updatedAt <= sessionTTL
+    }
+}

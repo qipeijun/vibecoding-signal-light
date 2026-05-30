@@ -79,7 +79,7 @@ final class StateStore {
 
     func clearSessions() throws {
         try withLock {
-            try writeJSON(SessionState(sessions: [:]), to: sessionFile)
+            try SignalLightStateFiles.writeSessionState(SessionState(sessions: [:]), in: stateDir)
         }
     }
 
@@ -123,8 +123,7 @@ final class StateStore {
     }
 
     private func writeCurrentStatus(_ signal: String) throws {
-        let payload = CurrentStatus(aggregate: signal, updatedAt: Date().timeIntervalSince1970)
-        try writeJSON(payload, to: currentStatusFile)
+        try SignalLightStateFiles.writeCurrentStatus(signal, in: stateDir)
         notifyStatusChanged()
     }
 
@@ -167,9 +166,7 @@ final class StateStore {
     }
 
     private func pruneSessions(_ sessions: inout [String: SessionRecord], now: Double) {
-        sessions = sessions.filter { _, record in
-            now - record.updatedAt <= sessionTTL
-        }
+        pruneExpiredSessions(&sessions, now: now, sessionTTL: sessionTTL)
     }
 
     private func writeJSON<T: Encodable>(_ payload: T, to url: URL) throws {
