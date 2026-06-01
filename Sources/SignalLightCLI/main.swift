@@ -190,7 +190,7 @@ private func runClaudeHook(args: [String], store: StateStore) throws -> Int {
     _ = try store.applySessionSignal(
         sessionKey: key,
         signalName: signal,
-        source: currentSessionSource(preference: .claudeCode),
+        source: currentSessionSource(preference: .claudeCode, payload: payload),
         model: modelName(payload: payload, environment: ProcessInfo.processInfo.environment)
     )
     return 0

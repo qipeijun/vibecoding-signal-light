@@ -21,7 +21,7 @@ enum SessionSourcePreference {
     case claudeCode
 }
 
-func currentSessionSource(preference: SessionSourcePreference) -> SessionSource? {
+func currentSessionSource(preference: SessionSourcePreference, payload: [String: Any] = [:]) -> SessionSource? {
     if let explicit = sourceFromEnvironmentOverride() {
         return explicit
     }
@@ -32,7 +32,8 @@ func currentSessionSource(preference: SessionSourcePreference) -> SessionSource?
             ?? sourceFromFrontmostApp(bundleIdentifiers: Set(codexBundleIdentifiers + terminalBundleIdentifiers))
             ?? sourceFromRunningApp(bundleIdentifiers: codexBundleIdentifiers)
     case .claudeCode:
-        return sourceFromTerminalEnvironment()
+        return sourceFromClaudeSession(payload: payload)
+            ?? sourceFromTerminalEnvironment()
             ?? sourceFromFrontmostApp(bundleIdentifiers: Set(terminalBundleIdentifiers + claudeBundleIdentifiers))
             ?? sourceFromRunningApp(bundleIdentifiers: terminalBundleIdentifiers)
             ?? sourceFromRunningApp(bundleIdentifiers: claudeBundleIdentifiers)
@@ -93,6 +94,64 @@ private func sourceFromTerminalEnvironment() -> SessionSource? {
     default:
         return nil
     }
+}
+
+private func sourceFromClaudeSession(payload: [String: Any]) -> SessionSource? {
+    guard let sessionID = claudeSessionID(payload: payload) else {
+        return nil
+    }
+
+    let sessionDirectory = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/sessions", isDirectory: true)
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+        at: sessionDirectory,
+        includingPropertiesForKeys: nil
+    ) else {
+        return nil
+    }
+
+    for url in urls where url.pathExtension == "json" {
+        guard let data = try? Data(contentsOf: url),
+              let metadata = try? JSONDecoder().decode(ClaudeSessionMetadata.self, from: data),
+              metadata.sessionId == sessionID
+        else {
+            continue
+        }
+
+        return SessionSource(
+            bundleIdentifier: nil,
+            processIdentifier: metadata.pid,
+            localizedName: "Claude Code",
+            capturedAt: Date().timeIntervalSince1970
+        )
+    }
+
+    return nil
+}
+
+private func claudeSessionID(payload: [String: Any]) -> String? {
+    if let sessionID = payload["session_id"] as? String {
+        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+    }
+
+    let environment = ProcessInfo.processInfo.environment
+    for key in ["CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"] {
+        if let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !value.isEmpty {
+            return value
+        }
+    }
+
+    return nil
+}
+
+private struct ClaudeSessionMetadata: Decodable {
+    let pid: Int?
+    let sessionId: String?
 }
 
 private func sourceFromKnownBundleIdentifier(_ bundleIdentifier: String, localizedName: String) -> SessionSource {
