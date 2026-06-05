@@ -32,6 +32,31 @@ struct SignalLightSharedTests {
     func environmentOverridesAgentConfig() throws {
         try SignalLightSharedTestSupport.environmentOverridesAgentConfig()
     }
+
+    @Test
+    func codexQuotaDecodesCodexBucket() throws {
+        try SignalLightSharedTestSupport.codexQuotaDecodesCodexBucket()
+    }
+
+    @Test
+    func codexQuotaDecodesBackwardCompatibleBucket() throws {
+        try SignalLightSharedTestSupport.codexQuotaDecodesBackwardCompatibleBucket()
+    }
+
+    @Test
+    func codexQuotaRequiresBothWindows() throws {
+        try SignalLightSharedTestSupport.codexQuotaRequiresBothWindows()
+    }
+
+    @Test
+    func codexQuotaRejectsInvalidPayload() throws {
+        try SignalLightSharedTestSupport.codexQuotaRejectsInvalidPayload()
+    }
+
+    @Test
+    func codexQuotaWindowDisplayHelpers() throws {
+        try SignalLightSharedTestSupport.codexQuotaWindowDisplayHelpers()
+    }
 }
 #elseif canImport(XCTest)
 final class SignalLightSharedTests: XCTestCase {
@@ -53,6 +78,26 @@ final class SignalLightSharedTests: XCTestCase {
 
     func testEnvironmentOverridesAgentConfig() throws {
         try SignalLightSharedTestSupport.environmentOverridesAgentConfig()
+    }
+
+    func testCodexQuotaDecodesCodexBucket() throws {
+        try SignalLightSharedTestSupport.codexQuotaDecodesCodexBucket()
+    }
+
+    func testCodexQuotaDecodesBackwardCompatibleBucket() throws {
+        try SignalLightSharedTestSupport.codexQuotaDecodesBackwardCompatibleBucket()
+    }
+
+    func testCodexQuotaRequiresBothWindows() throws {
+        try SignalLightSharedTestSupport.codexQuotaRequiresBothWindows()
+    }
+
+    func testCodexQuotaRejectsInvalidPayload() throws {
+        try SignalLightSharedTestSupport.codexQuotaRejectsInvalidPayload()
+    }
+
+    func testCodexQuotaWindowDisplayHelpers() throws {
+        try SignalLightSharedTestSupport.codexQuotaWindowDisplayHelpers()
     }
 }
 #endif
@@ -138,6 +183,109 @@ private enum SignalLightSharedTestSupport {
 
         try expectEqual(agent.stateDirectory, "/tmp/custom-signal-light")
         try expectEqual(agent.sessionTTLSeconds, 42.5)
+    }
+
+    static func codexQuotaDecodesCodexBucket() throws {
+        let data = """
+        {
+          "rateLimits": {
+            "limitId": "legacy",
+            "limitName": "Legacy",
+            "primary": { "usedPercent": 99, "windowDurationMins": 60, "resetsAt": 1780000000 },
+            "secondary": { "usedPercent": 98, "windowDurationMins": 120, "resetsAt": 1780000300 }
+          },
+          "rateLimitsByLimitId": {
+            "codex": {
+              "limitId": "codex",
+              "limitName": "Codex",
+              "planType": "plus",
+              "rateLimitReachedType": "rate_limit_reached",
+              "credits": { "balance": "12.50", "hasCredits": true, "unlimited": false },
+              "primary": { "usedPercent": 42, "windowDurationMins": 300, "resetsAt": 1780000600 },
+              "secondary": { "usedPercent": 17, "windowDurationMins": 10080, "resetsAt": 1780000900 }
+            }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try CodexRateLimitPayload.decodeSnapshot(from: data)
+
+        try expectEqual(snapshot.limitId, "codex")
+        try expectEqual(snapshot.limitName, "Codex")
+        try expectEqual(snapshot.planType, "plus")
+        try expectEqual(snapshot.rateLimitReachedType, "rate_limit_reached")
+        try expectEqual(snapshot.credits?.balance, "12.50")
+        try expectEqual(snapshot.primary.usedPercent, 42)
+        try expectEqual(snapshot.primary.windowDurationMins, 300)
+        try expectEqual(snapshot.primary.resetsAt, 1780000600)
+        try expectEqual(snapshot.secondary.usedPercent, 17)
+        try expectEqual(snapshot.secondary.windowDurationMins, 10080)
+    }
+
+    static func codexQuotaDecodesBackwardCompatibleBucket() throws {
+        let data = """
+        {
+          "rateLimits": {
+            "limitId": "codex",
+            "limitName": "Codex",
+            "planType": "pro",
+            "primary": { "usedPercent": 5, "windowDurationMins": 300, "resetsAt": null },
+            "secondary": { "usedPercent": 9, "windowDurationMins": 10080, "resetsAt": null }
+          },
+          "rateLimitsByLimitId": null
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try CodexRateLimitPayload.decodeSnapshot(from: data)
+
+        try expectEqual(snapshot.limitId, "codex")
+        try expectEqual(snapshot.planType, "pro")
+        try expectEqual(snapshot.primary.usedPercent, 5)
+        try expectEqual(snapshot.secondary.usedPercent, 9)
+    }
+
+    static func codexQuotaRequiresBothWindows() throws {
+        let data = """
+        {
+          "rateLimits": {
+            "limitId": "codex",
+            "primary": { "usedPercent": 5, "windowDurationMins": 300, "resetsAt": null }
+          }
+        }
+        """.data(using: .utf8)!
+
+        do {
+            _ = try CodexRateLimitPayload.decodeSnapshot(from: data)
+        } catch let error as CodexRateLimitDecodingError {
+            try expectEqual(error, .missingWindows)
+            return
+        }
+        throw TestFailure("Expected missing window decoding error")
+    }
+
+    static func codexQuotaRejectsInvalidPayload() throws {
+        let data = """
+        { "rateLimits": "not-a-rate-limit-object" }
+        """.data(using: .utf8)!
+
+        do {
+            _ = try CodexRateLimitPayload.decodeSnapshot(from: data)
+        } catch let error as CodexRateLimitDecodingError {
+            try expectEqual(error, .invalidPayload)
+            return
+        }
+        throw TestFailure("Expected invalid payload decoding error")
+    }
+
+    static func codexQuotaWindowDisplayHelpers() throws {
+        let fiveHour = CodexRateLimitWindow(usedPercent: 73, windowDurationMins: 300, resetsAt: nil)
+        let actualWindow = CodexRateLimitWindow(usedPercent: 120, windowDurationMins: 90, resetsAt: nil)
+
+        try expectEqual(fiveHour.remainingPercent, 27)
+        try expectEqual(fiveHour.displayTitle(defaultTitle: "5 小时"), "5 小时")
+        try expectEqual(actualWindow.remainingPercent, 0)
+        try expectEqual(actualWindow.displayTitle(defaultTitle: "5 小时"), "90 分钟窗口")
+        try expectEqual(CodexRateLimitWindow.formatDuration(minutes: 10080), "7 天")
     }
 
     private static func loadAggregationContract() throws -> [AggregationContractCase] {
