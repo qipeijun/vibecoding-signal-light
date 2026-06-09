@@ -14,6 +14,8 @@ final class StatusInfoViewController: NSViewController {
     private let updatedValue = NSTextField(labelWithString: "")
     private let directoryValue = NSTextField(labelWithString: "")
     private let quotaStatusValue = NSTextField(labelWithString: "")
+    private let quotaSummaryValue = NSTextField(labelWithString: "")
+    private let quotaSummaryLabel = NSTextField(labelWithString: "")
     private let quotaPrimaryRow = QuotaWindowRowView(title: "5 小时")
     private let quotaSecondaryRow = QuotaWindowRowView(title: "7 天")
 
@@ -69,10 +71,7 @@ final class StatusInfoViewController: NSViewController {
         stack.addArrangedSubview(makeRow(title: "状态目录", value: directoryValue, selectable: true))
 
         stack.addArrangedSubview(makeSeparator())
-        stack.addArrangedSubview(makeQuotaHeader())
-        stack.addArrangedSubview(makeRow(title: "状态", value: quotaStatusValue))
-        stack.addArrangedSubview(quotaPrimaryRow)
-        stack.addArrangedSubview(quotaSecondaryRow)
+        stack.addArrangedSubview(makeQuotaCard())
         applyQuotaState(.loading)
 
         let hint = NSTextField(labelWithString: "状态由本机 Agent hook 写入，菜单栏和悬浮灯会实时读取这里的数据。")
@@ -112,20 +111,14 @@ final class StatusInfoViewController: NSViewController {
         guard let value else {
             return "暂无更新时间"
         }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
-        return formatter.string(from: Date(timeIntervalSince1970: value))
+        return StatusInfoFormatters.timestamp.string(from: Date(timeIntervalSince1970: value))
     }
 
     private func formattedResetTime(_ value: Int64?) -> String {
         guard let value else {
             return "暂无重置时间"
         }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return "重置 \(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(value))))"
+        return "重置 \(StatusInfoFormatters.resetTime.string(from: Date(timeIntervalSince1970: TimeInterval(value))))"
     }
 
     @objc private func refreshQuota() {
@@ -141,14 +134,24 @@ final class StatusInfoViewController: NSViewController {
         quotaState = state
         switch state {
         case .loading:
+            quotaSummaryValue.stringValue = "--%"
+            quotaSummaryValue.textColor = .secondaryLabelColor
+            quotaSummaryLabel.stringValue = "短窗口剩余"
             quotaStatusValue.stringValue = "正在读取 Codex 额度..."
             quotaPrimaryRow.isHidden = true
             quotaSecondaryRow.isHidden = true
         case .unavailable(let reason):
+            quotaSummaryValue.stringValue = "不可用"
+            quotaSummaryValue.textColor = .systemRed
+            quotaSummaryLabel.stringValue = "读取失败"
             quotaStatusValue.stringValue = reason
             quotaPrimaryRow.isHidden = true
             quotaSecondaryRow.isHidden = true
         case .loaded(let snapshot):
+            let primaryRemaining = snapshot.primary.remainingPercent
+            quotaSummaryValue.stringValue = "\(primaryRemaining)%"
+            quotaSummaryValue.textColor = quotaTextColor(forRemainingPercent: primaryRemaining)
+            quotaSummaryLabel.stringValue = "\(snapshot.primary.displayTitle(defaultTitle: "5 小时"))剩余"
             quotaStatusValue.stringValue = quotaStatus(from: snapshot)
             quotaPrimaryRow.isHidden = false
             quotaSecondaryRow.isHidden = false
@@ -190,22 +193,91 @@ final class StatusInfoViewController: NSViewController {
         return parts.joined(separator: " · ")
     }
 
-    private func makeQuotaHeader() -> NSView {
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.spacing = 8
-        row.alignment = .centerY
+    private func makeQuotaCard() -> NSView {
+        let card = QuotaCardView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.widthAnchor.constraint(equalToConstant: 512).isActive = true
 
-        let title = makeSectionTitle("Codex 额度")
-        row.addArrangedSubview(title)
-        row.addArrangedSubview(NSView())
+        let content = NSStackView()
+        content.orientation = .vertical
+        content.spacing = 12
+        content.alignment = .leading
+        content.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(content)
+
+        let header = NSStackView()
+        header.orientation = .horizontal
+        header.spacing = 14
+        header.alignment = .top
+        header.widthAnchor.constraint(equalToConstant: 480).isActive = true
+
+        let titleStack = NSStackView()
+        titleStack.orientation = .vertical
+        titleStack.spacing = 4
+        titleStack.alignment = .leading
+
+        let title = NSTextField(labelWithString: "Codex 额度")
+        title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = .labelColor
+        titleStack.addArrangedSubview(title)
+
+        quotaStatusValue.font = NSFont.systemFont(ofSize: 11)
+        quotaStatusValue.textColor = .secondaryLabelColor
+        quotaStatusValue.lineBreakMode = .byTruncatingMiddle
+        quotaStatusValue.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        titleStack.addArrangedSubview(quotaStatusValue)
+
+        header.addArrangedSubview(titleStack)
+        header.addArrangedSubview(NSView())
 
         let button = NSButton(title: "刷新", target: self, action: #selector(refreshQuota))
         button.bezelStyle = .rounded
         button.controlSize = .small
-        row.addArrangedSubview(button)
-        row.widthAnchor.constraint(equalToConstant: 512).isActive = true
-        return row
+        header.addArrangedSubview(button)
+
+        let summaryRow = NSStackView()
+        summaryRow.orientation = .horizontal
+        summaryRow.spacing = 18
+        summaryRow.alignment = .bottom
+
+        let summaryStack = NSStackView()
+        summaryStack.orientation = .vertical
+        summaryStack.spacing = 2
+        summaryStack.alignment = .leading
+
+        quotaSummaryValue.font = NSFont.monospacedDigitSystemFont(ofSize: 34, weight: .semibold)
+        quotaSummaryValue.textColor = .labelColor
+        quotaSummaryValue.lineBreakMode = .byClipping
+        quotaSummaryValue.widthAnchor.constraint(equalToConstant: 132).isActive = true
+        summaryStack.addArrangedSubview(quotaSummaryValue)
+
+        quotaSummaryLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        quotaSummaryLabel.textColor = .secondaryLabelColor
+        quotaSummaryLabel.lineBreakMode = .byTruncatingTail
+        quotaSummaryLabel.widthAnchor.constraint(equalToConstant: 132).isActive = true
+        summaryStack.addArrangedSubview(quotaSummaryLabel)
+
+        let windowsStack = NSStackView()
+        windowsStack.orientation = .vertical
+        windowsStack.spacing = 8
+        windowsStack.alignment = .leading
+        windowsStack.addArrangedSubview(quotaPrimaryRow)
+        windowsStack.addArrangedSubview(quotaSecondaryRow)
+
+        summaryRow.addArrangedSubview(summaryStack)
+        summaryRow.addArrangedSubview(windowsStack)
+
+        content.addArrangedSubview(header)
+        content.addArrangedSubview(summaryRow)
+
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: card.topAnchor),
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+        ])
+        return card
     }
 
     private func makeRow(
@@ -250,6 +322,16 @@ final class StatusInfoViewController: NSViewController {
     }
 }
 
+private func quotaTextColor(forRemainingPercent percent: Int) -> NSColor {
+    if percent <= 10 {
+        return .systemRed
+    }
+    if percent <= 25 {
+        return .systemOrange
+    }
+    return .labelColor
+}
+
 private func cleanText(_ value: String?) -> String? {
     guard let text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
         return nil
@@ -257,16 +339,56 @@ private func cleanText(_ value: String?) -> String? {
     return text
 }
 
+private enum StatusInfoFormatters {
+    static let timestamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+
+    static let resetTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }()
+}
+
+private final class QuotaCardView: NSView {
+    override var isFlipped: Bool {
+        true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+        NSColor.controlBackgroundColor.withAlphaComponent(0.72).setFill()
+        path.fill()
+
+        NSColor.separatorColor.withAlphaComponent(0.55).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let topGlow = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
+        NSColor.white.withAlphaComponent(effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.06 : 0.38).setStroke()
+        topGlow.lineWidth = 1
+        topGlow.stroke()
+    }
+}
+
 private final class QuotaWindowRowView: NSStackView {
     private let titleValue = NSTextField(labelWithString: "")
-    private let progress = NSProgressIndicator()
-    private let percentValue = NSTextField(labelWithString: "")
+    private let progress = QuotaProgressView()
+    private let remainingValue = NSTextField(labelWithString: "")
     private let detailValue = NSTextField(labelWithString: "")
 
     init(title: String) {
         super.init(frame: .zero)
         orientation = .vertical
-        spacing = 3
+        spacing = 5
         alignment = .leading
         buildUI(title: title)
     }
@@ -277,53 +399,126 @@ private final class QuotaWindowRowView: NSStackView {
 
     func update(window: CodexRateLimitWindow, defaultTitle: String, resetText: String) {
         titleValue.stringValue = window.displayTitle(defaultTitle: defaultTitle)
-        progress.doubleValue = min(100, max(0, Double(window.usedPercent)))
-        percentValue.stringValue = "已用 \(window.usedPercent)%"
-        detailValue.stringValue = "剩余 \(window.remainingPercent)% · \(resetText)"
+        progress.percent = window.usedPercent
+        let remaining = window.remainingPercent
+        let used = max(0, window.usedPercent)
+        progress.remainingPercent = remaining
+        remainingValue.stringValue = "剩余 \(remaining)%"
+        remainingValue.textColor = quotaTextColor(forRemainingPercent: remaining)
+        detailValue.stringValue = resetText
+        progress.toolTip = "已用 \(used)%"
     }
 
     private func buildUI(title: String) {
-        let topRow = NSStackView()
-        topRow.orientation = .horizontal
-        topRow.spacing = 10
-        topRow.alignment = .centerY
+        widthAnchor.constraint(equalToConstant: 326).isActive = true
+
+        let metaRow = NSStackView()
+        metaRow.orientation = .horizontal
+        metaRow.spacing = 10
+        metaRow.alignment = .firstBaseline
 
         titleValue.stringValue = title
-        titleValue.font = NSFont.systemFont(ofSize: 12)
+        titleValue.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         titleValue.textColor = .secondaryLabelColor
-        titleValue.alignment = .right
-        titleValue.widthAnchor.constraint(equalToConstant: 74).isActive = true
-        topRow.addArrangedSubview(titleValue)
+        titleValue.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        metaRow.addArrangedSubview(titleValue)
 
-        progress.isIndeterminate = false
-        progress.minValue = 0
-        progress.maxValue = 100
-        progress.controlSize = .small
-        progress.style = .bar
-        progress.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        topRow.addArrangedSubview(progress)
-
-        percentValue.font = NSFont.systemFont(ofSize: 12)
-        percentValue.textColor = .controlTextColor
-        percentValue.widthAnchor.constraint(equalToConstant: 92).isActive = true
-        topRow.addArrangedSubview(percentValue)
-
-        let detailRow = NSStackView()
-        detailRow.orientation = .horizontal
-        detailRow.spacing = 10
-        detailRow.alignment = .firstBaseline
-
-        let spacer = NSView()
-        spacer.widthAnchor.constraint(equalToConstant: 74).isActive = true
-        detailRow.addArrangedSubview(spacer)
+        remainingValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        remainingValue.textColor = .labelColor
+        remainingValue.lineBreakMode = .byTruncatingTail
+        remainingValue.widthAnchor.constraint(equalToConstant: 78).isActive = true
+        metaRow.addArrangedSubview(remainingValue)
 
         detailValue.font = NSFont.systemFont(ofSize: 11)
         detailValue.textColor = .secondaryLabelColor
         detailValue.lineBreakMode = .byTruncatingTail
-        detailValue.widthAnchor.constraint(equalToConstant: 322).isActive = true
-        detailRow.addArrangedSubview(detailValue)
+        detailValue.widthAnchor.constraint(equalToConstant: 178).isActive = true
+        metaRow.addArrangedSubview(detailValue)
 
-        addArrangedSubview(topRow)
-        addArrangedSubview(detailRow)
+        progress.widthAnchor.constraint(equalToConstant: 326).isActive = true
+        progress.heightAnchor.constraint(equalToConstant: 8).isActive = true
+
+        addArrangedSubview(metaRow)
+        addArrangedSubview(progress)
     }
+}
+
+private final class QuotaProgressView: NSView {
+    private var clampedPercent = 0
+    private var clampedRemainingPercent = 100
+
+    var percent: Int {
+        get {
+            clampedPercent
+        }
+        set {
+            clampedPercent = min(100, max(0, newValue))
+            needsDisplay = true
+        }
+    }
+
+    var remainingPercent: Int {
+        get {
+            clampedRemainingPercent
+        }
+        set {
+            clampedRemainingPercent = min(100, max(0, newValue))
+            needsDisplay = true
+        }
+    }
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 10)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let trackHeight: CGFloat = 8
+        let trackRect = bounds.insetBy(dx: 0, dy: max(0, (bounds.height - trackHeight) / 2))
+        let radius = trackRect.height / 2
+        Self.trackColor.setFill()
+        NSBezierPath(roundedRect: trackRect, xRadius: radius, yRadius: radius).fill()
+
+        Self.tickColor.setStroke()
+        for tick in 1..<10 {
+            let x = trackRect.minX + trackRect.width * CGFloat(tick) / 10
+            let tickPath = NSBezierPath()
+            tickPath.move(to: NSPoint(x: x, y: trackRect.minY + 1))
+            tickPath.line(to: NSPoint(x: x, y: trackRect.maxY - 1))
+            tickPath.lineWidth = 0.5
+            tickPath.stroke()
+        }
+
+        guard clampedPercent > 0 else {
+            return
+        }
+
+        let fillWidth = max(trackRect.height, trackRect.width * CGFloat(clampedPercent) / 100)
+        let fillRect = NSRect(
+            x: trackRect.minX,
+            y: trackRect.minY,
+            width: min(trackRect.width, fillWidth),
+            height: trackRect.height
+        )
+        quotaProgressColor(forRemainingPercent: clampedRemainingPercent).setFill()
+        NSBezierPath(roundedRect: fillRect, xRadius: radius, yRadius: radius).fill()
+    }
+
+    private static let trackColor = NSColor.separatorColor.withAlphaComponent(0.28)
+    private static let tickColor = NSColor.controlBackgroundColor.withAlphaComponent(0.65)
+}
+
+private func quotaProgressColor(forRemainingPercent percent: Int) -> NSColor {
+    if percent <= 10 {
+        return NSColor.systemRed.withAlphaComponent(0.9)
+    }
+    if percent <= 25 {
+        return NSColor.systemOrange.withAlphaComponent(0.88)
+    }
+    return NSColor.systemGreen.withAlphaComponent(0.82)
 }

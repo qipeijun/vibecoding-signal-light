@@ -1,8 +1,4 @@
 import Foundation
-import SignalLightShared
-
-private let codexHookCommand = "/usr/local/bin/codex-signal-hook"
-private let claudeHookCommand = "/usr/local/bin/claude-code-signal-hook"
 
 private let codexHookEvents: [(name: String, matcher: String?)] = [
     ("SessionStart", nil),
@@ -34,22 +30,49 @@ private let claudeHookEvents: [(name: String, matcher: String?)] = [
     ("SessionEnd", nil),
 ]
 
-struct HookInstallReport {
-    var title: String
-    var path: String
-    var changed: Bool
-    var ok: Bool
-    var message: String
+public struct HookInstallReport: Equatable {
+    public var title: String
+    public var path: String
+    public var changed: Bool
+    public var ok: Bool
+    public var message: String
+
+    public init(title: String, path: String, changed: Bool, ok: Bool, message: String) {
+        self.title = title
+        self.path = path
+        self.changed = changed
+        self.ok = ok
+        self.message = message
+    }
 }
 
-func installSignalLightHooks(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> [HookInstallReport] {
+public enum HookInstallError: Error, LocalizedError, CustomStringConvertible {
+    case message(String)
+
+    public var errorDescription: String? {
+        description
+    }
+
+    public var description: String {
+        switch self {
+        case .message(let text):
+            return text
+        }
+    }
+}
+
+public func installSignalLightHooks(
+    homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+) throws -> [HookInstallReport] {
     [
         try installCodexHooks(homeDirectory: homeDirectory),
         try installClaudeHooks(homeDirectory: homeDirectory),
     ]
 }
 
-func checkSignalLightHooks(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> [HookInstallReport] {
+public func checkSignalLightHooks(
+    homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+) -> [HookInstallReport] {
     [
         checkCodexHooks(homeDirectory: homeDirectory),
         checkClaudeHooks(homeDirectory: homeDirectory),
@@ -60,7 +83,7 @@ private func installCodexHooks(homeDirectory: URL) throws -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".codex/hooks.json")
     var root = try readJSONObject(at: path) ?? [:]
     let before = root
-    root = upsertHooks(in: root, command: codexHookCommand, events: codexHookEvents)
+    root = upsertHooks(in: root, command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
     try writeJSONObject(root, to: path)
 
     let changed = !jsonObjectsEqual(before, root)
@@ -77,7 +100,7 @@ private func installClaudeHooks(homeDirectory: URL) throws -> HookInstallReport 
     let path = homeDirectory.appendingPathComponent(".claude/settings.json")
     var root = try readJSONObject(at: path) ?? [:]
     let before = root
-    root = upsertHooks(in: root, command: claudeHookCommand, events: claudeHookEvents)
+    root = upsertHooks(in: root, command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
     try writeJSONObject(root, to: path)
 
     let changed = !jsonObjectsEqual(before, root)
@@ -92,12 +115,12 @@ private func installClaudeHooks(homeDirectory: URL) throws -> HookInstallReport 
 
 private func checkCodexHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".codex/hooks.json")
-    return checkHooks(path: path, title: "Codex hooks", command: codexHookCommand, events: codexHookEvents)
+    return checkHooks(path: path, title: "Codex hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
 }
 
 private func checkClaudeHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".claude/settings.json")
-    return checkHooks(path: path, title: "Claude Code hooks", command: claudeHookCommand, events: claudeHookEvents)
+    return checkHooks(path: path, title: "Claude Code hooks", command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
 }
 
 private func checkHooks(
@@ -133,7 +156,7 @@ private func readJSONObject(at url: URL) throws -> [String: Any]? {
     let data = try Data(contentsOf: url)
     let object = try JSONSerialization.jsonObject(with: data)
     guard let root = object as? [String: Any] else {
-        throw SignalCLIError.message("配置不是 JSON object: \(url.path)")
+        throw HookInstallError.message("配置不是 JSON object: \(url.path)")
     }
     return root
 }
@@ -143,8 +166,14 @@ private func writeJSONObject(_ object: [String: Any], to url: URL) throws {
     let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     let tmpURL = url.appendingPathExtension("tmp")
     try data.write(to: tmpURL, options: .atomic)
-    try? FileManager.default.removeItem(at: url)
-    try FileManager.default.moveItem(at: tmpURL, to: url)
+    defer {
+        try? FileManager.default.removeItem(at: tmpURL)
+    }
+    if FileManager.default.fileExists(atPath: url.path) {
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: tmpURL)
+    } else {
+        try FileManager.default.moveItem(at: tmpURL, to: url)
+    }
 }
 
 private func upsertHooks(
@@ -215,7 +244,10 @@ private func hasHook(root: [String: Any], event: String, command: String) -> Boo
             return false
         }
         return handlers.contains { handler in
-            (handler["command"] as? String) == command
+            guard let existingCommand = handler["command"] as? String else {
+                return false
+            }
+            return isSignalLightHookCommand(existingCommand, expectedCommand: command)
         }
     }
 }

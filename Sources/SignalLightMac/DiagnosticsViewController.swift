@@ -4,7 +4,11 @@ import SignalLightShared
 final class DiagnosticsViewController: NSViewController {
     private let configStore: SignalLightConfigStore
     private weak var statusStack: NSStackView?
+    private weak var hookStatusStack: NSStackView?
     private weak var repairResultField: NSTextField?
+    private weak var hookRepairResultField: NSTextField?
+    private weak var repairHooksButton: NSButton?
+    private var hookCheckGeneration = 0
 
     init(configStore: SignalLightConfigStore, config: SignalLightConfig) {
         self.configStore = configStore
@@ -16,7 +20,7 @@ final class DiagnosticsViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 390))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 430))
     }
 
     override func viewDidLoad() {
@@ -54,6 +58,29 @@ final class DiagnosticsViewController: NSViewController {
         self.statusStack = statusStack
         stack.addArrangedSubview(statusStack)
 
+        stack.addArrangedSubview(makeSeparator())
+
+        let hookLabel = NSTextField(labelWithString: "Agent Hooks:")
+        hookLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        stack.addArrangedSubview(hookLabel)
+
+        let hookStatusStack = NSStackView()
+        hookStatusStack.orientation = .vertical
+        hookStatusStack.spacing = 4
+        hookStatusStack.alignment = .leading
+        self.hookStatusStack = hookStatusStack
+        stack.addArrangedSubview(hookStatusStack)
+
+        let hookRepairResultField = NSTextField(labelWithString: "无")
+        hookRepairResultField.lineBreakMode = .byTruncatingMiddle
+        hookRepairResultField.preferredMaxLayoutWidth = 500
+        hookRepairResultField.font = NSFont.systemFont(ofSize: 11)
+        hookRepairResultField.textColor = .secondaryLabelColor
+        self.hookRepairResultField = hookRepairResultField
+        stack.addArrangedSubview(hookRepairResultField)
+
+        stack.addArrangedSubview(makeSeparator())
+
         let repairLabel = NSTextField(labelWithString: "修复记录:")
         repairLabel.font = NSFont.boldSystemFont(ofSize: 12)
         stack.addArrangedSubview(repairLabel)
@@ -80,6 +107,12 @@ final class DiagnosticsViewController: NSViewController {
         repairBtn.bezelStyle = .rounded
         repairBtn.controlSize = .small
         buttonStack.addArrangedSubview(repairBtn)
+
+        let repairHooksBtn = NSButton(title: "修复 Agent Hooks", target: self, action: #selector(repairHooks))
+        repairHooksBtn.bezelStyle = .rounded
+        repairHooksBtn.controlSize = .small
+        self.repairHooksButton = repairHooksBtn
+        buttonStack.addArrangedSubview(repairHooksBtn)
 
         let openDirBtn = NSButton(title: "打开配置目录", target: self, action: #selector(openConfigDir))
         openDirBtn.bezelStyle = .rounded
@@ -109,6 +142,7 @@ final class DiagnosticsViewController: NSViewController {
         guard let statusStack else { return }
         // 清除旧结果
         statusStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        hookStatusStack?.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         let configPath = configStore.configFileURL().path
         let configDirPath = configStore.configDirectoryURL().path
@@ -132,22 +166,10 @@ final class DiagnosticsViewController: NSViewController {
         ]
 
         for (label, pass) in checks {
-            let row = NSStackView()
-            row.orientation = .horizontal
-            row.spacing = 6
-            row.alignment = .centerY
-
-            let indicator = NSTextField(labelWithString: pass ? "●" : "●")
-            indicator.textColor = pass ? .systemGreen : .systemRed
-            indicator.font = NSFont.systemFont(ofSize: 14)
-            row.addArrangedSubview(indicator)
-
-            let labelField = NSTextField(labelWithString: label)
-            labelField.font = NSFont.systemFont(ofSize: 11)
-            row.addArrangedSubview(labelField)
-
-            statusStack.addArrangedSubview(row)
+            statusStack.addArrangedSubview(makeStatusRow(label: label, pass: pass))
         }
+
+        runHookDiagnostics()
     }
 
     @objc private func recheck() {
@@ -162,6 +184,31 @@ final class DiagnosticsViewController: NSViewController {
         } catch {
             repairResultField?.stringValue = "修复配置失败: \(error.localizedDescription)"
             showSettingsError(error)
+        }
+    }
+
+    @objc private func repairHooks() {
+        repairHooksButton?.isEnabled = false
+        hookRepairResultField?.stringValue = "正在修复 Agent Hooks..."
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let result = Result { try installSignalLightHooks() }
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                self.repairHooksButton?.isEnabled = true
+                switch result {
+                case .success(let reports):
+                    self.hookRepairResultField?.stringValue = reports
+                        .map { "\($0.title): \($0.message)" }
+                        .joined(separator: "；")
+                    self.runDiagnostics()
+                case .failure(let error):
+                    self.hookRepairResultField?.stringValue = "修复 Agent Hooks 失败: \(error.localizedDescription)"
+                    self.showSettingsError(error)
+                }
+            }
         }
     }
 
@@ -195,5 +242,52 @@ final class DiagnosticsViewController: NSViewController {
         let box = NSBox()
         box.boxType = .separator
         return box
+    }
+
+    private func makeStatusRow(label: String, pass: Bool) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 6
+        row.alignment = .centerY
+
+        let indicator = NSTextField(labelWithString: "●")
+        indicator.textColor = pass ? .systemGreen : .systemRed
+        indicator.font = NSFont.systemFont(ofSize: 14)
+        row.addArrangedSubview(indicator)
+
+        let labelField = NSTextField(labelWithString: label)
+        labelField.font = NSFont.systemFont(ofSize: 11)
+        labelField.lineBreakMode = .byTruncatingMiddle
+        labelField.widthAnchor.constraint(equalToConstant: 480).isActive = true
+        row.addArrangedSubview(labelField)
+
+        return row
+    }
+
+    private func runHookDiagnostics() {
+        guard let hookStatusStack else {
+            return
+        }
+        hookCheckGeneration += 1
+        let generation = hookCheckGeneration
+        hookStatusStack.addArrangedSubview(makeStatusRow(label: "Agent hooks 检查中...", pass: true))
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let reports = checkSignalLightHooks()
+            DispatchQueue.main.async {
+                guard let self,
+                      generation == self.hookCheckGeneration,
+                      let hookStatusStack = self.hookStatusStack
+                else {
+                    return
+                }
+                hookStatusStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+                for report in reports {
+                    hookStatusStack.addArrangedSubview(
+                        self.makeStatusRow(label: "\(report.title): \(report.message)", pass: report.ok)
+                    )
+                }
+            }
+        }
     }
 }

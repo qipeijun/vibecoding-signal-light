@@ -29,7 +29,7 @@ final class CodexRateLimitReader {
         let process = Process()
         process.executableURL = codexURL
         process.arguments = ["app-server", "--listen", "stdio://"]
-        process.environment = environment
+        process.environment = processEnvironment(from: environment)
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
@@ -98,16 +98,14 @@ final class CodexRateLimitReader {
 
     private static func findCodexExecutable(environment: [String: String]) -> URL? {
         let fileManager = FileManager.default
-        var candidates: [String] = []
-
-        if let path = environment["PATH"] {
-            candidates.append(contentsOf: path.split(separator: ":").map { "\($0)/codex" })
-        }
-        candidates.append(contentsOf: [
+        let pathCandidates = SignalLightPaths.pathEntries(from: environment["PATH"]).map { "\($0)/codex" }
+        let fallbackCandidates = [
+            SignalLightPaths.bundledCodexExecutable,
+            SignalLightPaths.npmCodexExecutable,
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
-            "/Applications/Codex.app/Contents/Resources/codex",
-        ])
+        ]
+        let candidates = pathCandidates + fallbackCandidates
 
         for candidate in candidates {
             if fileManager.isExecutableFile(atPath: candidate) {
@@ -115,6 +113,12 @@ final class CodexRateLimitReader {
             }
         }
         return nil
+    }
+
+    private static func processEnvironment(from environment: [String: String]) -> [String: String] {
+        var next = environment
+        next["PATH"] = SignalLightPaths.mergePath(next["PATH"])
+        return next
     }
 
     private static func userFacingReason(for error: Error) -> String {
@@ -181,6 +185,10 @@ private final class JSONRPCLineClient {
         output.readabilityHandler = { [weak self] handle in
             self?.append(handle.availableData)
         }
+    }
+
+    deinit {
+        stop()
     }
 
     func stop() {

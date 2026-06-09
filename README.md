@@ -56,7 +56,7 @@ GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](doc
 - 安装包会自动写入用户级 Codex / Claude Code hooks，也可用 `signal-light doctor` 检查接线状态。
 - 支持多会话状态：整体状态以最近一次有效 hook 写入为准，避免旧会话长期压住新会话。
 - 支持状态规则自定义，可以为每个已知状态配置颜色和动画模式。
-- 提供配置诊断和修复入口，能检查配置文件、状态目录和写入权限。
+- 提供配置诊断和修复入口，能检查配置文件、状态目录、写入权限和 Agent hooks 接线。
 - 安装包会安装 App 和命令行工具，安装后的 hook 不依赖 Python 环境。
 
 ## 灯语说明
