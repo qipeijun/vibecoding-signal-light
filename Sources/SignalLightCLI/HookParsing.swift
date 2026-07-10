@@ -32,6 +32,27 @@ private let claudeEventToSignal: [String: String] = [
     "SessionEnd": "session_end",
 ]
 
+private let cursorEventToSignal: [String: String] = [
+    "sessionStart": "session_start",
+    "beforeSubmitPrompt": "thinking",
+    "preToolUse": "working",
+    "postToolUse": "tool_done",
+    "postToolUseFailure": "blocked",
+    "subagentStart": "working",
+    "subagentStop": "tool_done",
+    "beforeShellExecution": "working",
+    "afterShellExecution": "tool_done",
+    "beforeMCPExecution": "working",
+    "afterMCPExecution": "tool_done",
+    "beforeReadFile": "working",
+    "afterFileEdit": "tool_done",
+    "preCompact": "working",
+    "afterAgentResponse": "tool_done",
+    "afterAgentThought": "tool_done",
+    "stop": "done",
+    "sessionEnd": "session_end",
+]
+
 private let failureSignals: [String: String] = [
     "error": "blocked",
     "failed": "blocked",
@@ -143,6 +164,58 @@ func claudeSessionKey(payload: [String: Any], environment: [String: String]) -> 
 
     if let cwd = payload["cwd"] as? String, !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return "cwd:\(cwd.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+    return "global"
+}
+
+func chooseCursorSignal(eventName: String, payload: [String: Any]) -> String {
+    if let explicit = firstString(payload, keys: ["signal", "signal_name", "lamp_signal"])?.lowercased(),
+       validSignals.contains(explicit) {
+        return explicit
+    }
+
+    if eventName == "stop",
+       let status = payload["status"] as? String,
+       ["error", "aborted"].contains(status) {
+        return "blocked"
+    }
+
+    if let status = firstString(payload, keys: ["status", "state"])?.lowercased() {
+        if validSignals.contains(status) {
+            return status
+        }
+        if let failureSignal = failureSignals[status] {
+            return failureSignal
+        }
+    }
+
+    if hasStructuredFailure(payload) {
+        return "blocked"
+    }
+
+    return cursorEventToSignal[eventName] ?? cursorEventToSignal[eventName.trimmingCharacters(in: .whitespacesAndNewlines)] ?? "attention"
+}
+
+func cursorSessionKey(payload: [String: Any], environment: [String: String]) -> String {
+    if let conversationId = payload["conversation_id"] as? String,
+       !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    for key in ["CURSOR_SESSION_ID", "CURSOR_CONVERSATION_ID"] {
+        if let value = environment[key], !value.isEmpty {
+            return value
+        }
+    }
+
+    if let workspaceRoots = payload["workspace_roots"] as? [String],
+       let firstRoot = workspaceRoots.first,
+       !firstRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return firstRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    if let cwd = firstString(payload, keys: ["cwd", "workspace", "workspace_dir", "project_dir"]) {
+        return "cwd:\(cwd)"
     }
     return "global"
 }

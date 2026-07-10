@@ -5,6 +5,8 @@ import SignalLightShared
 private let signalLightBundleIdentifier = "com.vibecoding.signal-light"
 private let codexBundleIdentifiers = ["com.openai.codex"]
 private let claudeBundleIdentifiers = ["com.anthropic.claudefordesktop"]
+private let cursorBundleIdentifiers = ["com.todesktop.230313mzl4w4u92", "com.cursor.osx"]
+
 private let terminalBundleIdentifiers = [
     "com.apple.Terminal",
     "com.googlecode.iterm2",
@@ -19,6 +21,7 @@ private let terminalBundleIdentifiers = [
 enum SessionSourcePreference {
     case codex
     case claudeCode
+    case cursor
 }
 
 func currentSessionSource(preference: SessionSourcePreference, payload: [String: Any] = [:]) -> SessionSource? {
@@ -37,6 +40,10 @@ func currentSessionSource(preference: SessionSourcePreference, payload: [String:
             ?? sourceFromFrontmostApp(bundleIdentifiers: Set(terminalBundleIdentifiers + claudeBundleIdentifiers))
             ?? sourceFromRunningApp(bundleIdentifiers: terminalBundleIdentifiers)
             ?? sourceFromRunningApp(bundleIdentifiers: claudeBundleIdentifiers)
+    case .cursor:
+        return sourceFromFrontmostApp(bundleIdentifiers: Set(cursorBundleIdentifiers + terminalBundleIdentifiers))
+            ?? sourceFromRunningApp(bundleIdentifiers: cursorBundleIdentifiers)
+            ?? sourceFromTerminalEnvironment()
     }
 }
 

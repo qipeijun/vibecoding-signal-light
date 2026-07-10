@@ -46,6 +46,8 @@ func run(args: [String], store: StateStore, configStore: SignalLightConfigStore)
         return try runCodexHook(args: rest, store: store)
     case "claude-code-hook":
         return try runClaudeHook(args: rest, store: store)
+    case "cursor-hook":
+        return try runCursorHook(args: rest, store: store)
     case "test":
         return try runPreview(store: store)
     case "app":
@@ -80,6 +82,7 @@ private func runDoctor(args: [String], store: StateStore, configStore: SignalLig
         ("signal-light 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/signal-light"), "/usr/local/bin/signal-light"),
         ("Codex hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/codex-signal-hook"), "/usr/local/bin/codex-signal-hook"),
         ("Claude hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/claude-code-signal-hook"), "/usr/local/bin/claude-code-signal-hook"),
+        ("Cursor hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/cursor-signal-hook"), "/usr/local/bin/cursor-signal-hook"),
         ("配置文件存在", FileManager.default.fileExists(atPath: configFile.path), configFile.path),
         ("状态目录可写", directoryIsWritable(stateDir), stateDir.path),
     ]
@@ -196,6 +199,34 @@ private func runClaudeHook(args: [String], store: StateStore) throws -> Int {
     return 0
 }
 
+private func runCursorHook(args: [String], store: StateStore) throws -> Int {
+    let stdinText = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let payload = readPayload(stdinText: stdinText)
+    let event = eventFromArgs(
+        args,
+        payload: payload,
+        keys: ["hook_event_name", "event_name", "event", "hook", "type"],
+        fallback: ProcessInfo.processInfo.environment["CURSOR_HOOK_EVENT"]
+            ?? ProcessInfo.processInfo.environment["HOOK_EVENT"]
+            ?? "stop"
+    )
+    let signal = chooseCursorSignal(eventName: event, payload: payload)
+    let key = cursorSessionKey(payload: payload, environment: ProcessInfo.processInfo.environment)
+
+    if args.contains("--dry-run") {
+        print("Session \(key): \(signal)")
+        return 0
+    }
+
+    _ = try store.applySessionSignal(
+        sessionKey: key,
+        signalName: signal,
+        source: currentSessionSource(preference: .cursor, payload: payload),
+        model: modelName(payload: payload, environment: ProcessInfo.processInfo.environment)
+    )
+    return 0
+}
+
 private func runPreview(store: StateStore) throws -> Int {
     for signal in ["permission", "attention", "working", "idle"] {
         try store.applySignal(signal)
@@ -261,7 +292,7 @@ private func configCommand(args: [String], configStore: SignalLightConfigStore) 
 }
 
 private func printHelp() {
-    print("Usage: signal-light <list|play|status|version|codex-hook|claude-code-hook|test|app|doctor|install-hooks|config|quit|uninstall>")
+    print("Usage: signal-light <list|play|status|version|codex-hook|claude-code-hook|cursor-hook|test|app|doctor|install-hooks|config|quit|uninstall>")
     print("       signal-light doctor [--home <path>]")
     print("       signal-light install-hooks [--home <path>] [--quiet]")
 }

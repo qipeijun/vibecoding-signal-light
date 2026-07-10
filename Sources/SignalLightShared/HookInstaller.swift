@@ -30,6 +30,27 @@ private let claudeHookEvents: [(name: String, matcher: String?)] = [
     ("SessionEnd", nil),
 ]
 
+private let cursorHookEvents: [(name: String, matcher: String?)] = [
+    ("sessionStart", nil),
+    ("beforeSubmitPrompt", nil),
+    ("preToolUse", "*"),
+    ("postToolUse", "*"),
+    ("postToolUseFailure", nil),
+    ("subagentStart", nil),
+    ("subagentStop", nil),
+    ("beforeShellExecution", "*"),
+    ("afterShellExecution", "*"),
+    ("beforeMCPExecution", "*"),
+    ("afterMCPExecution", "*"),
+    ("beforeReadFile", nil),
+    ("afterFileEdit", nil),
+    ("preCompact", nil),
+    ("afterAgentResponse", nil),
+    ("afterAgentThought", nil),
+    ("stop", nil),
+    ("sessionEnd", nil),
+]
+
 public struct HookInstallReport: Equatable {
     public var title: String
     public var path: String
@@ -67,6 +88,7 @@ public func installSignalLightHooks(
     [
         try installCodexHooks(homeDirectory: homeDirectory),
         try installClaudeHooks(homeDirectory: homeDirectory),
+        try installCursorHooks(homeDirectory: homeDirectory),
     ]
 }
 
@@ -76,6 +98,7 @@ public func checkSignalLightHooks(
     [
         checkCodexHooks(homeDirectory: homeDirectory),
         checkClaudeHooks(homeDirectory: homeDirectory),
+        checkCursorHooks(homeDirectory: homeDirectory),
     ]
 }
 
@@ -121,6 +144,28 @@ private func checkCodexHooks(homeDirectory: URL) -> HookInstallReport {
 private func checkClaudeHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".claude/settings.json")
     return checkHooks(path: path, title: "Claude Code hooks", command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
+}
+
+private func installCursorHooks(homeDirectory: URL) throws -> HookInstallReport {
+    let path = homeDirectory.appendingPathComponent(".cursor/hooks.json")
+    var root = try readJSONObject(at: path) ?? ["version": 1]
+    let before = root
+    root = upsertHooks(in: root, command: SignalLightPaths.cursorHookCommand, events: cursorHookEvents)
+    try writeJSONObject(root, to: path)
+
+    let changed = !jsonObjectsEqual(before, root)
+    return HookInstallReport(
+        title: "Cursor hooks",
+        path: path.path,
+        changed: changed,
+        ok: true,
+        message: changed ? "已写入 Cursor hooks" : "已存在，无需修改"
+    )
+}
+
+private func checkCursorHooks(homeDirectory: URL) -> HookInstallReport {
+    let path = homeDirectory.appendingPathComponent(".cursor/hooks.json")
+    return checkHooks(path: path, title: "Cursor hooks", command: SignalLightPaths.cursorHookCommand, events: cursorHookEvents)
 }
 
 private func checkHooks(
@@ -258,6 +303,9 @@ private func isSignalLightHookCommand(_ existing: String, expectedCommand: Strin
     }
     if expectedCommand.hasSuffix("/claude-code-signal-hook") {
         return existing == expectedCommand || existing.contains("/claude-code-signal-hook")
+    }
+    if expectedCommand.hasSuffix("/cursor-signal-hook") {
+        return existing == expectedCommand || existing.contains("/cursor-signal-hook")
     }
     return existing == expectedCommand
 }
