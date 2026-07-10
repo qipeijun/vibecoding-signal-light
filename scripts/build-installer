@@ -39,6 +39,13 @@ set -euo pipefail
 exec "/Applications/Signal Light.app/Contents/Resources/bin/claude-code-signal-hook" "$@"
 SCRIPT
 
+cat > "$INSTALL_BIN_DIR/cursor-signal-hook" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "/Applications/Signal Light.app/Contents/Resources/bin/cursor-signal-hook" "$@"
+SCRIPT
+
 cat > "$INSTALL_BIN_DIR/signal-light-uninstall" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -49,6 +56,7 @@ SCRIPT
 chmod +x "$INSTALL_BIN_DIR/signal-light" \
   "$INSTALL_BIN_DIR/codex-signal-hook" \
   "$INSTALL_BIN_DIR/claude-code-signal-hook" \
+  "$INSTALL_BIN_DIR/cursor-signal-hook" \
   "$INSTALL_BIN_DIR/signal-light-uninstall"
 
 xattr -cr "$PKG_ROOT" 2>/dev/null || true

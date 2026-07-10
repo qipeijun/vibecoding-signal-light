@@ -39,9 +39,18 @@ BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec "$BIN_DIR/signal-light" claude-code-hook "$@"
 SCRIPT
 
+cat > "$BIN_DIR_RESOURCES/cursor-signal-hook" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$BIN_DIR/signal-light" cursor-hook "$@"
+SCRIPT
+
 chmod +x "$BIN_DIR_RESOURCES/signal-light" \
   "$BIN_DIR_RESOURCES/codex-signal-hook" \
-  "$BIN_DIR_RESOURCES/claude-code-signal-hook"
+  "$BIN_DIR_RESOURCES/claude-code-signal-hook" \
+  "$BIN_DIR_RESOURCES/cursor-signal-hook"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
