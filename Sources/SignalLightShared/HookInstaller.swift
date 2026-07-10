@@ -49,6 +49,9 @@ private let cursorHookEvents: [(name: String, matcher: String?)] = [
     ("afterAgentThought", nil),
     ("stop", nil),
     ("sessionEnd", nil),
+    ("beforeTabFileRead", nil),
+    ("afterTabFileEdit", nil),
+    ("workspaceOpen", nil),
 ]
 
 private let cursorFlatFormatMinimumVersion = "3.10"
