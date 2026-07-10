@@ -81,11 +81,9 @@ private func isCursorPayload(_ payload: [String: Any]) -> Bool {
         return true
     }
 
-    if let eventName = payload["hook_event_name"] as? String {
-        let trimmed = eventName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let first = trimmed.first, first.isLowercase, resolvedCodexEventSignal(eventName: trimmed) != nil {
-            return true
-        }
+    if let eventName = payload["hook_event_name"] as? String,
+       resolvedCursorEventSignal(eventName: eventName) != nil {
+        return true
     }
 
     return false

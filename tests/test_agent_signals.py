@@ -414,12 +414,14 @@ def test_codex_model_name_prefers_payload_over_environment() -> None:
     assert codex_model_name(hook_input, {"SIGNAL_LIGHT_MODEL": "fallback-model"}) == "gpt-5-codex"
 
 
-def test_codex_hook_accepts_cursor_style_camel_case_events() -> None:
-    hook_input = CodexHookInput(event_name="preToolUse", payload={})
-    assert choose_signal(hook_input) == "working"
+@pytest.mark.parametrize(
+    "event_name",
+    ["PreToolUse", "pretooluse", "preToolUse"],
+)
+def test_codex_hook_event_names_are_case_insensitive(event_name: str) -> None:
+    signal = choose_signal(CodexHookInput(event_name=event_name, payload={}))
 
-    stop_input = CodexHookInput(event_name="afterAgentThought", payload={})
-    assert choose_signal(stop_input) == "tool_done"
+    assert signal == "working"
 
 
 def test_claude_model_name_uses_environment_fallback() -> None:

@@ -28,6 +28,7 @@ final class StatusInfoViewController: NSViewController {
     private let onPreferredSourceUpdate: (PreferredAgentSource) throws -> Void
     private var sourceRadioButtons: [NSButton] = []
     private let contentWidth: CGFloat = 512
+    private let contentStack = NSStackView()
 
     init(
         configStore: SignalLightConfigStore,
@@ -54,7 +55,7 @@ final class StatusInfoViewController: NSViewController {
         scrollView.drawsBackground = false
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 8, right: 0)
 
-        let docView = NSView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 820))
+        let docView = NSView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 1))
         scrollView.documentView = docView
         view = scrollView
     }
@@ -73,7 +74,12 @@ final class StatusInfoViewController: NSViewController {
 
         let record = preferredRecord()
         let nextProvider = resolveQuotaProvider(from: record)
-        stateValue.stringValue = stateStore.state.displayName
+        if let record {
+            let scopedSignal = aggregateSessions(["active": record])
+            stateValue.stringValue = SignalState(rawValue: scopedSignal)?.displayName ?? scopedSignal
+        } else {
+            stateValue.stringValue = stateStore.state.displayName
+        }
         sourceValue.stringValue = sourceName(from: record) ?? "当前状态未提供来源"
         modelValue.stringValue = cleanText(record?.model) ?? "当前状态未提供模型"
         updatedValue.stringValue = formattedTimestamp(stateStore.updatedAt ?? record?.updatedAt)
@@ -85,6 +91,7 @@ final class StatusInfoViewController: NSViewController {
         }
 
         syncSourceRadioSelection()
+        updateDocumentHeight()
     }
 
     private func buildUI() {
@@ -92,9 +99,10 @@ final class StatusInfoViewController: NSViewController {
             return
         }
 
-        let stack = NSStackView()
+        let stack = contentStack
         stack.orientation = .vertical
         stack.spacing = 14
+        stack.distribution = .gravityAreas
         stack.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 8, right: 4)
         stack.alignment = .leading
 
@@ -129,8 +137,21 @@ final class StatusInfoViewController: NSViewController {
             stack.leadingAnchor.constraint(equalTo: docView.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: docView.trailingAnchor),
             stack.widthAnchor.constraint(equalToConstant: contentWidth),
-            stack.bottomAnchor.constraint(equalTo: docView.bottomAnchor, constant: -8),
         ])
+        updateDocumentHeight()
+    }
+
+    private func updateDocumentHeight() {
+        guard let scrollView = view as? NSScrollView,
+              let docView = scrollView.documentView
+        else {
+            return
+        }
+
+        contentStack.layoutSubtreeIfNeeded()
+        let fittingHeight = ceil(contentStack.fittingSize.height) + 8
+        let viewportHeight = scrollView.contentView.bounds.height
+        docView.setFrameSize(NSSize(width: contentWidth, height: max(fittingHeight, viewportHeight)))
     }
 
     private func makeSourceFilterSection() -> NSView {
@@ -278,6 +299,7 @@ final class StatusInfoViewController: NSViewController {
         quotaStatusValue.stringValue = quotaProvider == .cursor ? "正在读取 Cursor 额度..." : "正在读取 Codex 额度..."
         quotaPrimaryRow.isHidden = true
         quotaSecondaryRow.isHidden = true
+        updateDocumentHeight()
     }
 
     private func applyCursorQuotaState(_ state: CursorQuotaState) {
@@ -316,6 +338,7 @@ final class StatusInfoViewController: NSViewController {
                 resetText: formattedResetDate(snapshot.billingCycleEnd)
             )
         }
+        updateDocumentHeight()
     }
 
     private func applyCodexQuotaState(_ state: CodexQuotaState) {
@@ -354,6 +377,7 @@ final class StatusInfoViewController: NSViewController {
                 resetText: formattedResetTime(snapshot.secondary.resetsAt)
             )
         }
+        updateDocumentHeight()
     }
 
     private func cursorQuotaStatus(from snapshot: CursorUsageSnapshot) -> String {

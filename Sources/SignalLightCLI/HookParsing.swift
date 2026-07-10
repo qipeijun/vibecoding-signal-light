@@ -2,55 +2,59 @@ import Foundation
 import SignalLightShared
 
 private let codexEventToSignal: [String: String] = [
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PermissionRequest": "permission",
-    "Stop": "done",
-    "SessionEnd": "session_end",
+    "sessionstart": "session_start",
+    "userpromptsubmit": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "permissionrequest": "permission",
+    "stop": "done",
+    "sessionend": "session_end",
 ]
 
 private let claudeEventToSignal: [String: String] = [
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PostToolUseFailure": "blocked",
-    "PostToolBatch": "working",
-    "PermissionDenied": "blocked",
-    "PreCompact": "working",
-    "PostCompact": "tool_done",
-    "SubagentStart": "working",
-    "SubagentStop": "tool_done",
-    "TaskCreated": "working",
-    "TaskCompleted": "tool_done",
-    "Stop": "done",
-    "StopFailure": "blocked",
-    "Notification": "attention",
-    "PermissionRequest": "permission",
-    "SessionEnd": "session_end",
+    "sessionstart": "session_start",
+    "userpromptsubmit": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "posttoolusefailure": "blocked",
+    "posttoolbatch": "working",
+    "permissiondenied": "blocked",
+    "precompact": "working",
+    "postcompact": "tool_done",
+    "subagentstart": "working",
+    "subagentstop": "tool_done",
+    "taskcreated": "working",
+    "taskcompleted": "tool_done",
+    "stop": "done",
+    "stopfailure": "blocked",
+    "notification": "attention",
+    "permissionrequest": "permission",
+    "sessionend": "session_end",
 ]
 
 private let cursorEventToSignal: [String: String] = [
-    "sessionStart": "session_start",
-    "beforeSubmitPrompt": "thinking",
-    "preToolUse": "working",
-    "postToolUse": "tool_done",
-    "postToolUseFailure": "blocked",
-    "subagentStart": "working",
-    "subagentStop": "tool_done",
-    "beforeShellExecution": "working",
-    "afterShellExecution": "tool_done",
-    "beforeMCPExecution": "working",
-    "afterMCPExecution": "tool_done",
-    "beforeReadFile": "working",
-    "afterFileEdit": "tool_done",
-    "preCompact": "working",
-    "afterAgentResponse": "tool_done",
-    "afterAgentThought": "tool_done",
+    "sessionstart": "session_start",
+    "beforesubmitprompt": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "posttoolusefailure": "blocked",
+    "subagentstart": "working",
+    "subagentstop": "tool_done",
+    "beforeshellexecution": "working",
+    "aftershellexecution": "tool_done",
+    "beforemcpexecution": "working",
+    "aftermcpexecution": "tool_done",
+    "beforereadfile": "working",
+    "afterfileedit": "tool_done",
+    "precompact": "working",
+    "afteragentresponse": "tool_done",
+    "afteragentthought": "tool_done",
+    "beforetabfileread": "working",
+    "aftertabfileedit": "tool_done",
+    "workspaceopen": "idle",
     "stop": "done",
-    "sessionEnd": "session_end",
+    "sessionend": "session_end",
+    "permissionrequest": "permission",
 ]
 
 private let failureSignals: [String: String] = [
@@ -87,40 +91,24 @@ func readPayload(stdinText: String) -> [String: Any] {
     return payload
 }
 
-private let codexCamelCaseEventToSignal: [String: String] = [
-    "sessionStart": "session_start",
-    "userPromptSubmit": "thinking",
-    "preToolUse": "working",
-    "postToolUse": "tool_done",
-    "permissionRequest": "permission",
-    "stop": "done",
-    "sessionEnd": "session_end",
-]
+private func normalizedEventName(_ eventName: String) -> String {
+    eventName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+}
 
 func resolvedCodexEventSignal(eventName: String) -> String? {
-    let trimmed = eventName.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else {
+    let key = normalizedEventName(eventName)
+    guard !key.isEmpty else {
         return nil
     }
+    return codexEventToSignal[key]
+}
 
-    if let signal = codexEventToSignal[trimmed] {
-        return signal
+func resolvedCursorEventSignal(eventName: String) -> String? {
+    let key = normalizedEventName(eventName)
+    guard !key.isEmpty else {
+        return nil
     }
-    if let signal = codexCamelCaseEventToSignal[trimmed] {
-        return signal
-    }
-    if let signal = cursorEventToSignal[trimmed] {
-        return signal
-    }
-
-    if let first = trimmed.first, first.isLowercase {
-        let pascalCase = String(first).uppercased() + trimmed.dropFirst()
-        if let signal = codexEventToSignal[pascalCase] {
-            return signal
-        }
-    }
-
-    return nil
+    return cursorEventToSignal[key]
 }
 
 func chooseCodexSignal(eventName: String, payload: [String: Any]) -> String {
@@ -151,13 +139,14 @@ func chooseClaudeSignal(eventName: String, payload: [String: Any]) -> String {
         return explicit
     }
 
-    if eventName == "Stop",
+    let eventKey = normalizedEventName(eventName)
+    if eventKey == "stop",
        let stopReason = payload["stop_reason"] as? String,
        ["max_tokens", "error"].contains(stopReason) {
         return "blocked"
     }
 
-    return claudeEventToSignal[eventName] ?? "attention"
+    return claudeEventToSignal[eventKey] ?? "attention"
 }
 
 func codexSessionKey(payload: [String: Any], environment: [String: String]) -> String {
@@ -210,7 +199,8 @@ func chooseCursorSignal(eventName: String, payload: [String: Any]) -> String {
         return explicit
     }
 
-    if eventName == "stop",
+    let eventKey = normalizedEventName(eventName)
+    if eventKey == "stop",
        let status = payload["status"] as? String,
        ["error", "aborted"].contains(status) {
         return "blocked"
@@ -229,7 +219,7 @@ func chooseCursorSignal(eventName: String, payload: [String: Any]) -> String {
         return "blocked"
     }
 
-    return cursorEventToSignal[eventName] ?? cursorEventToSignal[eventName.trimmingCharacters(in: .whitespacesAndNewlines)] ?? "attention"
+    return resolvedCursorEventSignal(eventName: eventName) ?? "attention"
 }
 
 func cursorSessionKey(payload: [String: Any], environment: [String: String]) -> String {
