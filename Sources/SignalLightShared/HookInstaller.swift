@@ -51,6 +51,13 @@ private let cursorHookEvents: [(name: String, matcher: String?)] = [
     ("sessionEnd", nil),
 ]
 
+private let cursorFlatFormatMinimumVersion = "3.10"
+
+enum CursorHookEnvelopeFormat: Equatable {
+    case nested
+    case flat
+}
+
 public struct HookInstallReport: Equatable {
     public var title: String
     public var path: String
@@ -104,11 +111,25 @@ public func checkSignalLightHooks(
     ]
 }
 
+func resolveCursorHookEnvelopeFormat(
+    existingRoot: [String: Any]?,
+    cursorAppSearchPaths: [URL] = defaultCursorAppSearchPaths()
+) -> CursorHookEnvelopeFormat {
+    if let existingRoot, let sniffed = sniffCursorHookEnvelopeFormat(from: existingRoot) {
+        return sniffed
+    }
+    if let version = readCursorAppVersion(searchPaths: cursorAppSearchPaths),
+       !isVersion(version, greaterThanOrEqualTo: cursorFlatFormatMinimumVersion) {
+        return .nested
+    }
+    return .flat
+}
+
 private func installCodexHooks(homeDirectory: URL) throws -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".codex/hooks.json")
     var root = try readJSONObject(at: path) ?? [:]
     let before = root
-    root = upsertHooks(in: root, command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
+    root = upsertNestedHooks(in: root, command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
     try writeJSONObject(root, to: path)
 
     let changed = !jsonObjectsEqual(before, root)
@@ -125,7 +146,7 @@ private func installClaudeHooks(homeDirectory: URL) throws -> HookInstallReport 
     let path = homeDirectory.appendingPathComponent(".claude/settings.json")
     var root = try readJSONObject(at: path) ?? [:]
     let before = root
-    root = upsertHooks(in: root, command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
+    root = upsertNestedHooks(in: root, command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
     try writeJSONObject(root, to: path)
 
     let changed = !jsonObjectsEqual(before, root)
@@ -140,19 +161,26 @@ private func installClaudeHooks(homeDirectory: URL) throws -> HookInstallReport 
 
 private func checkCodexHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".codex/hooks.json")
-    return checkHooks(path: path, title: "Codex hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
+    return checkNestedHooks(path: path, title: "Codex hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
 }
 
 private func checkClaudeHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".claude/settings.json")
-    return checkHooks(path: path, title: "Claude Code hooks", command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
+    return checkNestedHooks(path: path, title: "Claude Code hooks", command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
 }
 
 private func installCursorHooks(homeDirectory: URL) throws -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".cursor/hooks.json")
-    var root = try readJSONObject(at: path) ?? ["version": 1]
+    let existing = try readJSONObject(at: path)
+    var root = existing ?? ["version": 1]
     let before = root
-    root = upsertHooks(in: root, command: SignalLightPaths.cursorHookCommand, events: cursorHookEvents)
+    let format = resolveCursorHookEnvelopeFormat(existingRoot: existing)
+    root = upsertCursorHooks(
+        in: root,
+        command: SignalLightPaths.cursorHookCommand,
+        events: cursorHookEvents,
+        format: format
+    )
     try writeJSONObject(root, to: path)
 
     let changed = !jsonObjectsEqual(before, root)
@@ -167,14 +195,19 @@ private func installCursorHooks(homeDirectory: URL) throws -> HookInstallReport 
 
 private func checkCursorHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".cursor/hooks.json")
-    return checkHooks(path: path, title: "Cursor hooks", command: SignalLightPaths.cursorHookCommand, events: cursorHookEvents)
+    return checkCursorHooks(
+        path: path,
+        title: "Cursor hooks",
+        command: SignalLightPaths.cursorHookCommand,
+        events: cursorHookEvents
+    )
 }
 
 private func installOpenCodeHooks(homeDirectory: URL) throws -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".config/opencode/hooks.json")
     var root = try readJSONObject(at: path) ?? [:]
     let before = root
-    root = upsertHooks(in: root, command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
+    root = upsertNestedHooks(in: root, command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
     try writeJSONObject(root, to: path)
 
     let changed = !jsonObjectsEqual(before, root)
@@ -189,10 +222,10 @@ private func installOpenCodeHooks(homeDirectory: URL) throws -> HookInstallRepor
 
 private func checkOpenCodeHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".config/opencode/hooks.json")
-    return checkHooks(path: path, title: "OpenCode hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
+    return checkNestedHooks(path: path, title: "OpenCode hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
 }
 
-private func checkHooks(
+private func checkNestedHooks(
     path: URL,
     title: String,
     command: String,
@@ -202,7 +235,33 @@ private func checkHooks(
         guard let root = try readJSONObject(at: path) else {
             return HookInstallReport(title: title, path: path.path, changed: false, ok: false, message: "未找到配置文件")
         }
-        let missing = events.filter { !hasHook(root: root, event: $0.name, command: command) }.map(\.name)
+        let missing = events.filter { !hasNestedHook(root: root, event: $0.name, command: command) }.map(\.name)
+        if missing.isEmpty {
+            return HookInstallReport(title: title, path: path.path, changed: false, ok: true, message: "已安装")
+        }
+        return HookInstallReport(
+            title: title,
+            path: path.path,
+            changed: false,
+            ok: false,
+            message: "缺少事件: \(missing.joined(separator: ", "))"
+        )
+    } catch {
+        return HookInstallReport(title: title, path: path.path, changed: false, ok: false, message: error.localizedDescription)
+    }
+}
+
+private func checkCursorHooks(
+    path: URL,
+    title: String,
+    command: String,
+    events: [(name: String, matcher: String?)]
+) -> HookInstallReport {
+    do {
+        guard let root = try readJSONObject(at: path) else {
+            return HookInstallReport(title: title, path: path.path, changed: false, ok: false, message: "未找到配置文件")
+        }
+        let missing = events.filter { !hasCursorHook(root: root, event: $0.name, command: command) }.map(\.name)
         if missing.isEmpty {
             return HookInstallReport(title: title, path: path.path, changed: false, ok: true, message: "已安装")
         }
@@ -245,7 +304,7 @@ private func writeJSONObject(_ object: [String: Any], to url: URL) throws {
     }
 }
 
-private func upsertHooks(
+private func upsertNestedHooks(
     in root: [String: Any],
     command: String,
     events: [(name: String, matcher: String?)]
@@ -253,7 +312,7 @@ private func upsertHooks(
     var root = root
     var hooks = root["hooks"] as? [String: Any] ?? [:]
     for event in events {
-        hooks[event.name] = upsertEventHook(
+        hooks[event.name] = upsertNestedEventHook(
             value: hooks[event.name],
             matcher: event.matcher,
             command: command
@@ -263,32 +322,90 @@ private func upsertHooks(
     return root
 }
 
-private func upsertEventHook(value: Any?, matcher: String?, command: String) -> [[String: Any]] {
-    // Cursor 3.10+ uses a flat array of script objects (no nested "hooks" group wrapper)
-    var scripts = value as? [[String: Any]] ?? []
+private func upsertCursorHooks(
+    in root: [String: Any],
+    command: String,
+    events: [(name: String, matcher: String?)],
+    format: CursorHookEnvelopeFormat
+) -> [String: Any] {
+    var root = root
+    var hooks = root["hooks"] as? [String: Any] ?? [:]
+    for event in events {
+        switch format {
+        case .nested:
+            hooks[event.name] = upsertNestedEventHook(
+                value: hooks[event.name],
+                matcher: event.matcher,
+                command: command
+            )
+        case .flat:
+            hooks[event.name] = upsertFlatEventHook(
+                value: hooks[event.name],
+                matcher: event.matcher,
+                command: command
+            )
+        }
+    }
+    root["hooks"] = hooks
+    return root
+}
 
-    // Remove old nested-format groups and old flat entries for this command
+private func upsertNestedEventHook(value: Any?, matcher: String?, command: String) -> [[String: Any]] {
+    var groups = value as? [[String: Any]] ?? []
+    groups = groups.compactMap { group in
+        guard let handlers = group["hooks"] as? [[String: Any]] else {
+            return group
+        }
+        let kept = handlers.filter { handler in
+            guard let cmd = handler["command"] as? String else { return true }
+            return !isSignalLightHookCommand(cmd, expectedCommand: command)
+        }
+        return kept.isEmpty ? nil : updatedHookGroup(group, handlers: kept)
+    }
+    groups.append(makeNestedHookGroup(matcher: matcher, command: command))
+    return groups
+}
+
+private func upsertFlatEventHook(value: Any?, matcher: String?, command: String) -> [[String: Any]] {
+    var scripts = value as? [[String: Any]] ?? []
     scripts = scripts.compactMap { entry in
-        // Old format: {"hooks": [...], "matcher": "..."}
         if let handlers = entry["hooks"] as? [[String: Any]] {
             let kept = handlers.filter { handler in
                 guard let cmd = handler["command"] as? String else { return true }
                 return !isSignalLightHookCommand(cmd, expectedCommand: command)
             }
-            return kept.isEmpty ? nil : entry  // drop group entirely if empty
+            return kept.isEmpty ? nil : updatedHookGroup(entry, handlers: kept)
         }
-        // New flat format: {"type": "command", "command": "..."}
         if let cmd = entry["command"] as? String, isSignalLightHookCommand(cmd, expectedCommand: command) {
             return nil
         }
         return entry
     }
-
-    scripts.append(makeHookScript(matcher: matcher, command: command))
+    scripts.append(makeFlatHookScript(matcher: matcher, command: command))
     return scripts
 }
 
-private func makeHookScript(matcher: String?, command: String) -> [String: Any] {
+private func updatedHookGroup(_ group: [String: Any], handlers: [[String: Any]]) -> [String: Any] {
+    var updated = group
+    updated["hooks"] = handlers
+    return updated
+}
+
+private func makeNestedHookGroup(matcher: String?, command: String) -> [String: Any] {
+    var group: [String: Any] = [
+        "hooks": [[
+            "type": "command",
+            "command": command,
+            "timeout": 5,
+        ]],
+    ]
+    if let matcher {
+        group["matcher"] = matcher
+    }
+    return group
+}
+
+private func makeFlatHookScript(matcher: String?, command: String) -> [String: Any] {
     var script: [String: Any] = [
         "type": "command",
         "command": command,
@@ -300,17 +417,31 @@ private func makeHookScript(matcher: String?, command: String) -> [String: Any] 
     return script
 }
 
-private func hasHook(root: [String: Any], event: String, command: String) -> Bool {
+private func hasNestedHook(root: [String: Any], event: String, command: String) -> Bool {
     guard let hooks = root["hooks"] as? [String: Any],
-          let scripts = hooks[event] as? [[String: Any]] else {
+          let groups = hooks[event] as? [[String: Any]] else {
         return false
     }
-    return scripts.contains { entry in
-        // New flat format
+    return groups.contains { group in
+        guard let handlers = group["hooks"] as? [[String: Any]] else {
+            return false
+        }
+        return handlers.contains { handler in
+            guard let cmd = handler["command"] as? String else { return false }
+            return isSignalLightHookCommand(cmd, expectedCommand: command)
+        }
+    }
+}
+
+private func hasCursorHook(root: [String: Any], event: String, command: String) -> Bool {
+    guard let hooks = root["hooks"] as? [String: Any],
+          let entries = hooks[event] as? [[String: Any]] else {
+        return false
+    }
+    return entries.contains { entry in
         if let cmd = entry["command"] as? String {
             return isSignalLightHookCommand(cmd, expectedCommand: command)
         }
-        // Old nested format (backwards compat check)
         if let handlers = entry["hooks"] as? [[String: Any]] {
             return handlers.contains { handler in
                 guard let cmd = handler["command"] as? String else { return false }
@@ -319,6 +450,76 @@ private func hasHook(root: [String: Any], event: String, command: String) -> Boo
         }
         return false
     }
+}
+
+private func sniffCursorHookEnvelopeFormat(from root: [String: Any]) -> CursorHookEnvelopeFormat? {
+    guard let hooks = root["hooks"] as? [String: Any] else {
+        return nil
+    }
+    var sawNested = false
+    var sawFlat = false
+    for value in hooks.values {
+        guard let entries = value as? [[String: Any]] else {
+            continue
+        }
+        for entry in entries {
+            if entry["hooks"] != nil {
+                sawNested = true
+            } else if entry["command"] != nil {
+                sawFlat = true
+            }
+        }
+    }
+    if sawFlat {
+        return .flat
+    }
+    if sawNested {
+        return .nested
+    }
+    return nil
+}
+
+private func defaultCursorAppSearchPaths() -> [URL] {
+    var paths = [
+        URL(fileURLWithPath: "/Applications/Cursor.app", isDirectory: true),
+    ]
+    let homeApplications = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Applications/Cursor.app", isDirectory: true)
+    paths.append(homeApplications)
+    return paths
+}
+
+private func readCursorAppVersion(searchPaths: [URL]) -> String? {
+    for appURL in searchPaths {
+        guard let bundle = Bundle(url: appURL),
+              let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            continue
+        }
+        return version
+    }
+    return nil
+}
+
+private func isVersion(_ lhs: String, greaterThanOrEqualTo rhs: String) -> Bool {
+    let left = parseVersionParts(lhs)
+    let right = parseVersionParts(rhs)
+    let count = max(left.count, right.count)
+    for index in 0..<count {
+        let leftPart = index < left.count ? left[index] : 0
+        let rightPart = index < right.count ? right[index] : 0
+        if leftPart != rightPart {
+            return leftPart > rightPart
+        }
+    }
+    return true
+}
+
+private func parseVersionParts(_ version: String) -> [Int] {
+    version
+        .split { !$0.isNumber }
+        .compactMap { Int($0) }
 }
 
 private func isSignalLightHookCommand(_ existing: String, expectedCommand: String) -> Bool {

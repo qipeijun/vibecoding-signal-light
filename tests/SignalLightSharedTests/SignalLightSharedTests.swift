@@ -97,6 +97,21 @@ struct SignalLightSharedTests {
     func pathMergePreservesUserPathOrderAndDeduplicatesDefaults() throws {
         try SignalLightSharedTestSupport.pathMergePreservesUserPathOrderAndDeduplicatesDefaults()
     }
+
+    @Test
+    func cursorHookEnvelopeFormatResolution() throws {
+        try SignalLightSharedTestSupport.cursorHookEnvelopeFormatResolution()
+    }
+
+    @Test
+    func cursorHookInstallerWritesFlatFormatOnFreshInstall() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerWritesFlatFormatOnFreshInstall()
+    }
+
+    @Test
+    func cursorHookInstallerFollowsExistingNestedFormat() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerFollowsExistingNestedFormat()
+    }
 }
 #elseif canImport(XCTest)
 final class SignalLightSharedTests: XCTestCase {
@@ -170,6 +185,18 @@ final class SignalLightSharedTests: XCTestCase {
 
     func testPathMergePreservesUserPathOrderAndDeduplicatesDefaults() throws {
         try SignalLightSharedTestSupport.pathMergePreservesUserPathOrderAndDeduplicatesDefaults()
+    }
+
+    func testCursorHookEnvelopeFormatResolution() throws {
+        try SignalLightSharedTestSupport.cursorHookEnvelopeFormatResolution()
+    }
+
+    func testCursorHookInstallerWritesFlatFormatOnFreshInstall() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerWritesFlatFormatOnFreshInstall()
+    }
+
+    func testCursorHookInstallerFollowsExistingNestedFormat() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerFollowsExistingNestedFormat()
     }
 }
 #endif
@@ -617,6 +644,84 @@ private enum SignalLightSharedTestSupport {
         try expect(reports.allSatisfy(\.ok), "custom Signal Light command paths should be accepted")
     }
 
+    static func cursorHookEnvelopeFormatResolution() throws {
+        let nestedRoot: [String: Any] = [
+            "hooks": [
+                "stop": [
+                    [
+                        "hooks": [
+                            ["type": "command", "command": "/usr/bin/other-hook"],
+                        ],
+                    ],
+                ],
+            ],
+        ]
+        let flatRoot: [String: Any] = [
+            "hooks": [
+                "stop": [
+                    ["type": "command", "command": "/usr/bin/other-hook"],
+                ],
+            ],
+        ]
+
+        try expectEqual(resolveCursorHookEnvelopeFormat(existingRoot: nestedRoot, cursorAppSearchPaths: []), .nested)
+        try expectEqual(resolveCursorHookEnvelopeFormat(existingRoot: flatRoot, cursorAppSearchPaths: []), .flat)
+        try expectEqual(resolveCursorHookEnvelopeFormat(existingRoot: nil, cursorAppSearchPaths: []), .flat)
+
+        let fakeCursorApp = try makeFakeCursorApp(version: "3.9.0")
+        defer { try? FileManager.default.removeItem(at: fakeCursorApp) }
+        try expectEqual(
+            resolveCursorHookEnvelopeFormat(existingRoot: nil, cursorAppSearchPaths: [fakeCursorApp]),
+            .nested
+        )
+
+        let newCursorApp = try makeFakeCursorApp(version: "3.10.0")
+        defer { try? FileManager.default.removeItem(at: newCursorApp) }
+        try expectEqual(
+            resolveCursorHookEnvelopeFormat(existingRoot: nil, cursorAppSearchPaths: [newCursorApp]),
+            .flat
+        )
+    }
+
+    static func cursorHookInstallerWritesFlatFormatOnFreshInstall() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        _ = try installSignalLightHooks(homeDirectory: tempDir)
+
+        let path = tempDir.appendingPathComponent(".cursor/hooks.json")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any]
+        let hooks = object?["hooks"] as? [String: Any]
+        let preToolUse = hooks?["preToolUse"] as? [[String: Any]]
+        let first = preToolUse?.first
+
+        try expectEqual(first?["command"] as? String, "/usr/local/bin/cursor-signal-hook")
+        try expect(first?["hooks"] == nil, "fresh Cursor install should use flat hook scripts")
+    }
+
+    static func cursorHookInstallerFollowsExistingNestedFormat() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cursorDir = tempDir.appendingPathComponent(".cursor", isDirectory: true)
+        try FileManager.default.createDirectory(at: cursorDir, withIntermediateDirectories: true)
+        try hookFixtureJSON(command: "/opt/homebrew/bin/other-hook", events: ["stop"]).data(using: .utf8)!
+            .write(to: cursorDir.appendingPathComponent("hooks.json"))
+
+        _ = try installSignalLightHooks(homeDirectory: tempDir)
+
+        let path = cursorDir.appendingPathComponent("hooks.json")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any]
+        let hooks = object?["hooks"] as? [String: Any]
+        let stopGroups = hooks?["stop"] as? [[String: Any]]
+        let signalLightGroup = stopGroups?.first {
+            guard let handlers = $0["hooks"] as? [[String: Any]] else { return false }
+            return handlers.contains { ($0["command"] as? String) == "/usr/local/bin/cursor-signal-hook" }
+        }
+
+        try expect(signalLightGroup != nil, "existing nested Cursor hooks should stay nested after install")
+    }
+
     static func pathMergePreservesUserPathOrderAndDeduplicatesDefaults() throws {
         let merged = SignalLightPaths.mergePath("/custom/bin:/usr/local/bin:/bin")
         let entries = SignalLightPaths.pathEntries(from: merged)
@@ -640,6 +745,20 @@ private enum SignalLightSharedTestSupport {
             .appendingPathComponent("signal-light-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private static func makeFakeCursorApp(version: String) throws -> URL {
+        let appURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("signal-light-tests-cursor-\(UUID().uuidString).app", isDirectory: true)
+        let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+        let plist: [String: Any] = [
+            "CFBundleShortVersionString": version,
+            "CFBundleIdentifier": "com.todesktop.test.cursor",
+        ]
+        let plistData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try plistData.write(to: contentsURL.appendingPathComponent("Info.plist"))
+        return appURL
     }
 
     private static func hookFixtureJSON(command: String, events: [String]) -> String {
