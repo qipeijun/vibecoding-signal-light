@@ -61,6 +61,15 @@ WORKING_SIGNALS = {"thinking", "working", "tool_done"}
 SESSION_END_SIGNALS = {"session_end", "off"}
 TURN_END_SIGNALS = {"turn_end"}
 
+# 信号分级 TTL（秒）。不在表中的信号使用 SESSION_TTL_SECONDS（默认 24h）。
+# 瞬态信号短 TTL：agent 停止活动后自动降级，避免 Cursor 退出/崩溃后灯永远亮。
+SIGNAL_TTL: dict[str, float] = {
+    "attention": 300,       # 5 分钟 — 需要关注，不应长期等待
+    "thinking": 600,        # 10 分钟 — agent 持续发 hook，停了就是死了
+    "working": 600,         # 10 分钟
+    "tool_done": 600,       # 10 分钟
+}
+
 
 class SignalLightError(RuntimeError):
     """Raised when the signal-light state cannot be updated."""
@@ -254,7 +263,12 @@ def _prune_sessions(sessions: dict[str, object], now: float) -> None:
             expired.append(session_key)
             continue
         updated_at = value.get("updated_at")
-        if not isinstance(updated_at, (int, float)) or now - updated_at > SESSION_TTL_SECONDS:
+        if not isinstance(updated_at, (int, float)):
+            expired.append(session_key)
+            continue
+        signal_name = value.get("signal")
+        ttl = SIGNAL_TTL.get(signal_name, SESSION_TTL_SECONDS) if isinstance(signal_name, str) else SESSION_TTL_SECONDS
+        if now - updated_at > ttl:
             expired.append(session_key)
 
     for session_key in expired:

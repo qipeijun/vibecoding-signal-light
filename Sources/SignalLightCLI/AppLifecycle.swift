@@ -7,6 +7,7 @@ private let installedCommandPaths = [
     "/usr/local/bin/signal-light",
     "/usr/local/bin/codex-signal-hook",
     "/usr/local/bin/claude-code-signal-hook",
+    "/usr/local/bin/cursor-signal-hook",
     "/usr/local/bin/signal-light-uninstall",
 ]
 

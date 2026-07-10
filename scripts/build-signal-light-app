@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $EUID -eq 0 ]]; then
+  echo "错误：请勿使用 sudo 运行本脚本。" >&2
+  echo "sudo 会让构建产物属主变成 root，导致后续普通用户构建时 Permission denied。" >&2
+  exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COPYFILE_DISABLE=1
 VERSION="${SIGNAL_LIGHT_VERSION:-1.0.6.2}"
@@ -16,7 +22,10 @@ ICONSET_DIR="$ROOT_DIR/dist/SignalLight.iconset"
 swift build --package-path "$ROOT_DIR" -c release
 BIN_DIR="$(swift build --package-path "$ROOT_DIR" -c release --show-bin-path)"
 
-rm -rf "$APP_DIR"
+if ! rm -rf "$APP_DIR" 2>/dev/null; then
+  echo "检测到 root 属主残留文件，使用 sudo 清理..." >&2
+  sudo rm -rf "$APP_DIR"
+fi
 mkdir -p "$MACOS_DIR" "$BIN_DIR_RESOURCES"
 cp "$BIN_DIR/signal-light-mac" "$MACOS_DIR/signal-light-mac"
 cp "$BIN_DIR/signal-light-cli" "$BIN_DIR_RESOURCES/signal-light"

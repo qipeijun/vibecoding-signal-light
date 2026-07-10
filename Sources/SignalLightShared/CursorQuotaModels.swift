@@ -1,10 +1,5 @@
 import Foundation
 
-public let cursorBundleIdentifiers: Set<String> = [
-    "com.todesktop.230313mzl4w4u92",
-    "com.cursor.osx",
-]
-
 public func isCursorSessionSource(_ source: SessionSource?) -> Bool {
     guard let bundleIdentifier = source?.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
           !bundleIdentifier.isEmpty

@@ -6,6 +6,7 @@ final class AgentSettingsViewController: NSViewController {
     private let onUpdate: (AgentConfig) throws -> Void
     private var agentConfig: AgentConfig
     private var directoryField: NSTextField!
+    private var sourcePopup: NSPopUpButton!
 
     init(config: AgentConfig, onUpdate: @escaping (AgentConfig) throws -> Void) {
         self.agentConfig = config
@@ -87,6 +88,33 @@ final class AgentSettingsViewController: NSViewController {
         ttlField.action = #selector(ttlChanged(_:))
 
         stack.addArrangedSubview(makeSeparator())
+        stack.addArrangedSubview(makeSectionTitle("状态来源"))
+
+        let sourceLabel = NSTextField(labelWithString: "优先展示:")
+        stack.addArrangedSubview(sourceLabel)
+
+        sourcePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        sourcePopup.controlSize = .small
+        for source in PreferredAgentSource.allCases {
+            sourcePopup.addItem(withTitle: source.displayName)
+        }
+        if let index = PreferredAgentSource.allCases.firstIndex(of: agentConfig.preferredAgentSource) {
+            sourcePopup.selectItem(at: index)
+        }
+        sourcePopup.target = self
+        sourcePopup.action = #selector(preferredSourceChanged(_:))
+        stack.addArrangedSubview(sourcePopup)
+
+        let sourceHint = NSTextField(
+            labelWithString: "多个 Agent 同时运行时，只展示所选来源的会话状态。OpenCode 使用独立筛选项，不再与 iTerm 等终端混在一起。"
+        )
+        sourceHint.font = NSFont.systemFont(ofSize: 11)
+        sourceHint.textColor = .secondaryLabelColor
+        sourceHint.lineBreakMode = .byWordWrapping
+        sourceHint.preferredMaxLayoutWidth = 500
+        stack.addArrangedSubview(sourceHint)
+
+        stack.addArrangedSubview(makeSeparator())
         stack.addArrangedSubview(makeSectionTitle("启动"))
 
         let launchCheck = NSButton(checkboxWithTitle: "登录时启动", target: self, action: #selector(launchAtLoginChanged(_:)))
@@ -158,6 +186,15 @@ final class AgentSettingsViewController: NSViewController {
         }
     }
 
+    @objc private func preferredSourceChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard index >= 0, index < PreferredAgentSource.allCases.count else {
+            return
+        }
+        agentConfig.preferredAgentSource = PreferredAgentSource.allCases[index]
+        notify()
+    }
+
     @objc private func launchAtLoginChanged(_ sender: NSButton) {
         guard #available(macOS 13.0, *) else {
             sender.state = .off
@@ -194,6 +231,9 @@ final class AgentSettingsViewController: NSViewController {
     @objc private func resetToDefaults() {
         agentConfig = AgentConfig.default
         directoryField.stringValue = agentConfig.stateDirectory
+        if let index = PreferredAgentSource.allCases.firstIndex(of: agentConfig.preferredAgentSource) {
+            sourcePopup.selectItem(at: index)
+        }
         notify()
     }
 

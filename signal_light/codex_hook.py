@@ -21,6 +21,28 @@ EVENT_TO_SIGNAL = {
     "SessionEnd": "session_end",
 }
 
+CURSOR_STYLE_EVENT_TO_SIGNAL = {
+    "sessionStart": "session_start",
+    "beforeSubmitPrompt": "thinking",
+    "preToolUse": "working",
+    "postToolUse": "tool_done",
+    "postToolUseFailure": "blocked",
+    "subagentStart": "working",
+    "subagentStop": "tool_done",
+    "beforeShellExecution": "working",
+    "afterShellExecution": "tool_done",
+    "beforeMCPExecution": "working",
+    "afterMCPExecution": "tool_done",
+    "beforeReadFile": "working",
+    "afterFileEdit": "tool_done",
+    "preCompact": "working",
+    "afterAgentResponse": "tool_done",
+    "afterAgentThought": "tool_done",
+    "stop": "done",
+    "sessionEnd": "session_end",
+    "permissionRequest": "permission",
+}
+
 FAILURE_SIGNALS = {
     "error": "blocked",
     "failed": "blocked",
@@ -91,7 +113,22 @@ def choose_signal(hook_input: CodexHookInput) -> str:
     if failure_marker:
         return FAILURE_SIGNALS[failure_marker]
 
-    return EVENT_TO_SIGNAL.get(hook_input.event_name, EVENT_TO_SIGNAL.get(hook_input.event_name.strip(), "attention"))
+    return _signal_for_event(hook_input.event_name) or "attention"
+
+
+def _signal_for_event(event_name: str) -> str | None:
+    event = event_name.strip()
+    if not event:
+        return None
+    if event in EVENT_TO_SIGNAL:
+        return EVENT_TO_SIGNAL[event]
+    if event in CURSOR_STYLE_EVENT_TO_SIGNAL:
+        return CURSOR_STYLE_EVENT_TO_SIGNAL[event]
+    if event[0].islower():
+        pascal = event[0].upper() + event[1:]
+        if pascal in EVENT_TO_SIGNAL:
+            return EVENT_TO_SIGNAL[pascal]
+    return None
 
 
 def session_key(hook_input: CodexHookInput, environ: Mapping[str, str]) -> str:

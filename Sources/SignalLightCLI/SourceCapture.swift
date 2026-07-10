@@ -2,22 +2,6 @@ import AppKit
 import Foundation
 import SignalLightShared
 
-private let signalLightBundleIdentifier = "com.vibecoding.signal-light"
-private let codexBundleIdentifiers = ["com.openai.codex"]
-private let claudeBundleIdentifiers = ["com.anthropic.claudefordesktop"]
-private let cursorBundleIdentifiers = ["com.todesktop.230313mzl4w4u92", "com.cursor.osx"]
-
-private let terminalBundleIdentifiers = [
-    "com.apple.Terminal",
-    "com.googlecode.iterm2",
-    "dev.warp.Warp-Stable",
-    "dev.warp.Warp",
-    "com.mitchellh.ghostty",
-    "io.alacritty",
-    "net.kovidgoyal.kitty",
-    "org.tabby",
-]
-
 enum SessionSourcePreference {
     case codex
     case claudeCode
@@ -29,22 +13,82 @@ func currentSessionSource(preference: SessionSourcePreference, payload: [String:
         return explicit
     }
 
+    if let inferred = sourceFromPayload(payload, preference: preference) {
+        return inferred
+    }
+
     switch preference {
     case .codex:
-        return sourceFromTerminalEnvironment()
-            ?? sourceFromFrontmostApp(bundleIdentifiers: Set(codexBundleIdentifiers + terminalBundleIdentifiers))
-            ?? sourceFromRunningApp(bundleIdentifiers: codexBundleIdentifiers)
+        return sourceFromRunningApp(bundleIdentifiers: Array(codexBundleIdentifiers))
+            ?? sourceFromFrontmostApp(bundleIdentifiers: codexBundleIdentifiers)
+            ?? sourceFromTerminalEnvironment()
     case .claudeCode:
         return sourceFromClaudeSession(payload: payload)
+            ?? sourceFromRunningApp(bundleIdentifiers: Array(claudeBundleIdentifiers))
+            ?? sourceFromFrontmostApp(bundleIdentifiers: claudeBundleIdentifiers)
             ?? sourceFromTerminalEnvironment()
-            ?? sourceFromFrontmostApp(bundleIdentifiers: Set(terminalBundleIdentifiers + claudeBundleIdentifiers))
-            ?? sourceFromRunningApp(bundleIdentifiers: terminalBundleIdentifiers)
-            ?? sourceFromRunningApp(bundleIdentifiers: claudeBundleIdentifiers)
     case .cursor:
-        return sourceFromFrontmostApp(bundleIdentifiers: Set(cursorBundleIdentifiers + terminalBundleIdentifiers))
-            ?? sourceFromRunningApp(bundleIdentifiers: cursorBundleIdentifiers)
-            ?? sourceFromTerminalEnvironment()
+        return sourceFromRunningApp(bundleIdentifiers: Array(cursorBundleIdentifiers))
+            ?? sourceFromFrontmostApp(bundleIdentifiers: cursorBundleIdentifiers)
     }
+}
+
+private let signalLightBundleIdentifier = "com.vibecoding.signal-light"
+
+private func sourceFromPayload(_ payload: [String: Any], preference: SessionSourcePreference) -> SessionSource? {
+    if isOpenCodePayload(payload) {
+        return makeOpenCodeSessionSource()
+    }
+
+    if isCursorPayload(payload) {
+        return sourceFromRunningApp(bundleIdentifiers: Array(cursorBundleIdentifiers))
+            ?? sourceFromKnownBundleIdentifier("com.todesktop.230313mzl4w4u92", localizedName: "Cursor")
+    }
+
+    if let claudeSource = sourceFromClaudeSession(payload: payload) {
+        return claudeSource
+    }
+
+    if payload["codex_session_id"] != nil {
+        return sourceFromRunningApp(bundleIdentifiers: Array(codexBundleIdentifiers))
+            ?? sourceFromKnownBundleIdentifier("com.openai.codex", localizedName: "Codex")
+    }
+
+    switch preference {
+    case .cursor:
+        return nil
+    case .claudeCode, .codex:
+        return nil
+    }
+}
+
+private func isCursorPayload(_ payload: [String: Any]) -> Bool {
+    if isOpenCodePayload(payload) {
+        return false
+    }
+
+    guard let conversationID = payload["conversation_id"] as? String,
+          !conversationID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+        return false
+    }
+
+    if isOpenCodeSessionKey(conversationID) {
+        return false
+    }
+
+    if payload["cursor_version"] != nil || payload["workspace_roots"] != nil {
+        return true
+    }
+
+    if let eventName = payload["hook_event_name"] as? String {
+        let trimmed = eventName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let first = trimmed.first, first.isLowercase, resolvedCodexEventSignal(eventName: trimmed) != nil {
+            return true
+        }
+    }
+
+    return false
 }
 
 private func sourceFromEnvironmentOverride() -> SessionSource? {

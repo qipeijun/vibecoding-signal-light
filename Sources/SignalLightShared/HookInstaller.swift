@@ -89,6 +89,7 @@ public func installSignalLightHooks(
         try installCodexHooks(homeDirectory: homeDirectory),
         try installClaudeHooks(homeDirectory: homeDirectory),
         try installCursorHooks(homeDirectory: homeDirectory),
+        try installOpenCodeHooks(homeDirectory: homeDirectory),
     ]
 }
 
@@ -99,6 +100,7 @@ public func checkSignalLightHooks(
         checkCodexHooks(homeDirectory: homeDirectory),
         checkClaudeHooks(homeDirectory: homeDirectory),
         checkCursorHooks(homeDirectory: homeDirectory),
+        checkOpenCodeHooks(homeDirectory: homeDirectory),
     ]
 }
 
@@ -166,6 +168,28 @@ private func installCursorHooks(homeDirectory: URL) throws -> HookInstallReport 
 private func checkCursorHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".cursor/hooks.json")
     return checkHooks(path: path, title: "Cursor hooks", command: SignalLightPaths.cursorHookCommand, events: cursorHookEvents)
+}
+
+private func installOpenCodeHooks(homeDirectory: URL) throws -> HookInstallReport {
+    let path = homeDirectory.appendingPathComponent(".config/opencode/hooks.json")
+    var root = try readJSONObject(at: path) ?? [:]
+    let before = root
+    root = upsertHooks(in: root, command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
+    try writeJSONObject(root, to: path)
+
+    let changed = !jsonObjectsEqual(before, root)
+    return HookInstallReport(
+        title: "OpenCode hooks",
+        path: path.path,
+        changed: changed,
+        ok: true,
+        message: changed ? "已写入 OpenCode hooks" : "已存在，无需修改"
+    )
+}
+
+private func checkOpenCodeHooks(homeDirectory: URL) -> HookInstallReport {
+    let path = homeDirectory.appendingPathComponent(".config/opencode/hooks.json")
+    return checkHooks(path: path, title: "OpenCode hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
 }
 
 private func checkHooks(

@@ -108,10 +108,13 @@ final class StatusInfoViewController: NSViewController {
     private func preferredRecord() -> SessionRecord? {
         let agent = configStore.effectiveAgentConfig(from: config)
         let now = Date().timeIntervalSince1970
-        return stateStore.sessionState.sessions.values.filter { record in
-            !sessionEndSignals.contains(record.signal)
-                && now - record.updatedAt <= agent.sessionTTLSeconds
-        }.max(by: { $0.updatedAt < $1.updatedAt })
+        return preferredSessionRecord(
+            in: stateStore.sessionState.sessions,
+            preferred: agent.preferredAgentSource,
+            now: now,
+            sessionTTL: agent.sessionTTLSeconds,
+            excludingEndSignals: true
+        )
     }
 
     private func sourceName(from record: SessionRecord?) -> String? {

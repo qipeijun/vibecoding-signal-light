@@ -87,6 +87,42 @@ func readPayload(stdinText: String) -> [String: Any] {
     return payload
 }
 
+private let codexCamelCaseEventToSignal: [String: String] = [
+    "sessionStart": "session_start",
+    "userPromptSubmit": "thinking",
+    "preToolUse": "working",
+    "postToolUse": "tool_done",
+    "permissionRequest": "permission",
+    "stop": "done",
+    "sessionEnd": "session_end",
+]
+
+func resolvedCodexEventSignal(eventName: String) -> String? {
+    let trimmed = eventName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        return nil
+    }
+
+    if let signal = codexEventToSignal[trimmed] {
+        return signal
+    }
+    if let signal = codexCamelCaseEventToSignal[trimmed] {
+        return signal
+    }
+    if let signal = cursorEventToSignal[trimmed] {
+        return signal
+    }
+
+    if let first = trimmed.first, first.isLowercase {
+        let pascalCase = String(first).uppercased() + trimmed.dropFirst()
+        if let signal = codexEventToSignal[pascalCase] {
+            return signal
+        }
+    }
+
+    return nil
+}
+
 func chooseCodexSignal(eventName: String, payload: [String: Any]) -> String {
     if let explicit = firstString(payload, keys: ["signal", "signal_name", "lamp_signal"])?.lowercased(),
        validSignals.contains(explicit) {
@@ -106,7 +142,7 @@ func chooseCodexSignal(eventName: String, payload: [String: Any]) -> String {
         return "blocked"
     }
 
-    return codexEventToSignal[eventName] ?? codexEventToSignal[eventName.trimmingCharacters(in: .whitespacesAndNewlines)] ?? "attention"
+    return resolvedCodexEventSignal(eventName: eventName) ?? "attention"
 }
 
 func chooseClaudeSignal(eventName: String, payload: [String: Any]) -> String {

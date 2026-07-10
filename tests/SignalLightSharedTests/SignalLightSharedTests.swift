@@ -74,6 +74,11 @@ struct SignalLightSharedTests {
     }
 
     @Test
+    func preferredAgentSourceFiltersSessions() throws {
+        try SignalLightSharedTestSupport.preferredAgentSourceFiltersSessions()
+    }
+
+    @Test
     func hookDiagnosticsReportsMissingHooks() throws {
         try SignalLightSharedTestSupport.hookDiagnosticsReportsMissingHooks()
     }
@@ -145,6 +150,10 @@ final class SignalLightSharedTests: XCTestCase {
 
     func testCursorSessionSourceDetection() throws {
         try SignalLightSharedTestSupport.cursorSessionSourceDetection()
+    }
+
+    func testPreferredAgentSourceFiltersSessions() throws {
+        try SignalLightSharedTestSupport.preferredAgentSourceFiltersSessions()
     }
 
     func testHookDiagnosticsReportsMissingHooks() throws {
@@ -417,17 +426,79 @@ private enum SignalLightSharedTestSupport {
         try expectEqual(isCursorSessionSource(nil), false)
     }
 
+    static func preferredAgentSourceFiltersSessions() throws {
+        let now = 1_000_000.0
+        let sessions: [String: SessionRecord] = [
+            "cursor": SessionRecord(
+                signal: "working",
+                updatedAt: now - 10,
+                source: SessionSource(
+                    bundleIdentifier: "com.todesktop.230313mzl4w4u92",
+                    processIdentifier: 1,
+                    localizedName: "Cursor",
+                    capturedAt: now
+                ),
+                model: "cursor-model"
+            ),
+            "ses_demo_open_code": SessionRecord(
+                signal: "working",
+                updatedAt: now - 5,
+                source: SessionSource(
+                    bundleIdentifier: "com.googlecode.iterm2",
+                    processIdentifier: 2,
+                    localizedName: "iTerm",
+                    capturedAt: now
+                ),
+                model: "deepseek-v4-pro"
+            ),
+            "terminal": SessionRecord(
+                signal: "attention",
+                updatedAt: now - 1,
+                source: SessionSource(
+                    bundleIdentifier: "com.googlecode.iterm2",
+                    processIdentifier: 3,
+                    localizedName: "iTerm",
+                    capturedAt: now
+                ),
+                model: "default"
+            ),
+        ]
+
+        try expectEqual(aggregateSessions(sessions), "attention")
+        try expectEqual(
+            aggregateSessions(sessions, preferred: .cursor, now: now, sessionTTL: 86400),
+            "working"
+        )
+        try expectEqual(
+            aggregateSessions(sessions, preferred: .opencode, now: now, sessionTTL: 86400),
+            "working"
+        )
+        try expectEqual(
+            aggregateSessions(sessions, preferred: .terminal, now: now, sessionTTL: 86400),
+            "attention"
+        )
+        try expectEqual(sessionAgentKind(sessionKey: "ses_demo", source: sessions["ses_demo_open_code"]?.source), .opencode)
+        try expectEqual(sessionAgentKind(sessionKey: "cursor", source: sessions["cursor"]?.source), .cursor)
+        try expectEqual(sessionAgentKind(sessionKey: "terminal", source: sessions["terminal"]?.source), .terminal)
+        try expectEqual(isOpenCodePayload(["session_id": "ses_abc123"]), true)
+        try expectEqual(isOpenCodePayload(["conversation_id": "17fa838a-f77f-4b21-93ec-bc81b42d6ec7"]), false)
+    }
+
     static func hookDiagnosticsReportsMissingHooks() throws {
         let tempDir = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let reports = checkSignalLightHooks(homeDirectory: tempDir)
 
-        try expectEqual(reports.count, 2)
+        try expectEqual(reports.count, 4)
         try expect(reports.allSatisfy { !$0.ok }, "fresh home should report missing hooks")
         try expect(
             reports.contains { $0.title == "Claude Code hooks" && $0.message == "未找到配置文件" },
             "Claude settings should be reported as missing"
+        )
+        try expect(
+            reports.contains { $0.title == "OpenCode hooks" && $0.message == "未找到配置文件" },
+            "OpenCode hooks should be reported as missing"
         )
     }
 
@@ -450,7 +521,7 @@ private enum SignalLightSharedTestSupport {
         let installReports = try installSignalLightHooks(homeDirectory: tempDir)
         let checkReports = checkSignalLightHooks(homeDirectory: tempDir)
 
-        try expectEqual(installReports.count, 2)
+        try expectEqual(installReports.count, 4)
         try expect(installReports.allSatisfy(\.ok), "install reports should pass")
         try expect(checkReports.allSatisfy(\.ok), "installed hooks should check cleanly")
 
@@ -474,8 +545,12 @@ private enum SignalLightSharedTestSupport {
 
         let codexDir = tempDir.appendingPathComponent(".codex", isDirectory: true)
         let claudeDir = tempDir.appendingPathComponent(".claude", isDirectory: true)
+        let cursorDir = tempDir.appendingPathComponent(".cursor", isDirectory: true)
+        let openCodeDir = tempDir.appendingPathComponent(".config/opencode", isDirectory: true)
         try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cursorDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: openCodeDir, withIntermediateDirectories: true)
 
         try hookFixtureJSON(command: "/opt/homebrew/bin/codex-signal-hook", events: [
             "SessionStart",
@@ -506,6 +581,36 @@ private enum SignalLightSharedTestSupport {
             "StopFailure",
             "SessionEnd",
         ]).data(using: .utf8)!.write(to: claudeDir.appendingPathComponent("settings.json"))
+
+        try hookFixtureJSON(command: "/opt/homebrew/bin/cursor-signal-hook", events: [
+            "sessionStart",
+            "beforeSubmitPrompt",
+            "preToolUse",
+            "postToolUse",
+            "postToolUseFailure",
+            "subagentStart",
+            "subagentStop",
+            "beforeShellExecution",
+            "afterShellExecution",
+            "beforeMCPExecution",
+            "afterMCPExecution",
+            "beforeReadFile",
+            "afterFileEdit",
+            "preCompact",
+            "afterAgentResponse",
+            "afterAgentThought",
+            "stop",
+            "sessionEnd",
+        ]).data(using: .utf8)!.write(to: cursorDir.appendingPathComponent("hooks.json"))
+
+        try hookFixtureJSON(command: "/opt/homebrew/bin/codex-signal-hook", events: [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PermissionRequest",
+            "PostToolUse",
+            "Stop",
+        ]).data(using: .utf8)!.write(to: openCodeDir.appendingPathComponent("hooks.json"))
 
         let reports = checkSignalLightHooks(homeDirectory: tempDir)
 
