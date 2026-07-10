@@ -39,7 +39,7 @@ final class SettingsTabViewController: NSViewController {
             case .display:
                 return "控制悬浮窗、透明度、动画速度、Dock 和 Touch Bar。"
             case .agent:
-                return "配置状态目录、会话超时、登录启动和来源筛选。"
+                return "配置状态目录、会话超时和登录启动。"
             case .rules:
                 return "为 11 个已知状态指定颜色与闪烁方式。"
             case .diagnostics:

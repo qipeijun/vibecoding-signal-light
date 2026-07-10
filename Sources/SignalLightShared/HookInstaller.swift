@@ -264,60 +264,60 @@ private func upsertHooks(
 }
 
 private func upsertEventHook(value: Any?, matcher: String?, command: String) -> [[String: Any]] {
-    var groups = value as? [[String: Any]] ?? []
-    let newGroup = makeHookGroup(matcher: matcher, command: command)
+    // Cursor 3.10+ uses a flat array of script objects (no nested "hooks" group wrapper)
+    var scripts = value as? [[String: Any]] ?? []
 
-    groups = groups.compactMap { group in
-        guard let handlers = group["hooks"] as? [[String: Any]] else {
-            return group
-        }
-        let filteredHandlers = handlers.filter { handler in
-            guard let existingCommand = handler["command"] as? String else {
-                return true
+    // Remove old nested-format groups and old flat entries for this command
+    scripts = scripts.compactMap { entry in
+        // Old format: {"hooks": [...], "matcher": "..."}
+        if let handlers = entry["hooks"] as? [[String: Any]] {
+            let kept = handlers.filter { handler in
+                guard let cmd = handler["command"] as? String else { return true }
+                return !isSignalLightHookCommand(cmd, expectedCommand: command)
             }
-            return !isSignalLightHookCommand(existingCommand, expectedCommand: command)
+            return kept.isEmpty ? nil : entry  // drop group entirely if empty
         }
-        if filteredHandlers.isEmpty {
+        // New flat format: {"type": "command", "command": "..."}
+        if let cmd = entry["command"] as? String, isSignalLightHookCommand(cmd, expectedCommand: command) {
             return nil
         }
-        var updated = group
-        updated["hooks"] = filteredHandlers
-        return updated
+        return entry
     }
 
-    groups.append(newGroup)
-    return groups
+    scripts.append(makeHookScript(matcher: matcher, command: command))
+    return scripts
 }
 
-private func makeHookGroup(matcher: String?, command: String) -> [String: Any] {
-    var group: [String: Any] = [
-        "hooks": [[
-            "type": "command",
-            "command": command,
-            "timeout": 5,
-        ]],
+private func makeHookScript(matcher: String?, command: String) -> [String: Any] {
+    var script: [String: Any] = [
+        "type": "command",
+        "command": command,
+        "timeout": 5,
     ]
     if let matcher {
-        group["matcher"] = matcher
+        script["matcher"] = matcher
     }
-    return group
+    return script
 }
 
 private func hasHook(root: [String: Any], event: String, command: String) -> Bool {
     guard let hooks = root["hooks"] as? [String: Any],
-          let groups = hooks[event] as? [[String: Any]] else {
+          let scripts = hooks[event] as? [[String: Any]] else {
         return false
     }
-    return groups.contains { group in
-        guard let handlers = group["hooks"] as? [[String: Any]] else {
-            return false
+    return scripts.contains { entry in
+        // New flat format
+        if let cmd = entry["command"] as? String {
+            return isSignalLightHookCommand(cmd, expectedCommand: command)
         }
-        return handlers.contains { handler in
-            guard let existingCommand = handler["command"] as? String else {
-                return false
+        // Old nested format (backwards compat check)
+        if let handlers = entry["hooks"] as? [[String: Any]] {
+            return handlers.contains { handler in
+                guard let cmd = handler["command"] as? String else { return false }
+                return isSignalLightHookCommand(cmd, expectedCommand: command)
             }
-            return isSignalLightHookCommand(existingCommand, expectedCommand: command)
         }
+        return false
     }
 }
 
