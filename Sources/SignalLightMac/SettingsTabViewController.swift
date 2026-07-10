@@ -35,11 +35,11 @@ final class SettingsTabViewController: NSViewController {
         var subtitle: String {
             switch self {
             case .info:
-                return "查看最近一次 Agent 状态，以及它来自哪个应用和模型。"
+                return "选择要监听的应用来源，并查看当前展示的状态详情。"
             case .display:
                 return "控制悬浮窗、透明度、动画速度、Dock 和 Touch Bar。"
             case .agent:
-                return "配置状态目录、会话超时、登录启动和会话清理。"
+                return "配置状态目录、会话超时、登录启动和来源筛选。"
             case .rules:
                 return "为 11 个已知状态指定颜色与闪烁方式。"
             case .diagnostics:
@@ -161,7 +161,12 @@ final class SettingsTabViewController: NSViewController {
             child = StatusInfoViewController(
                 configStore: configStore,
                 config: currentConfig,
-                stateStore: stateStore
+                stateStore: stateStore,
+                onPreferredSourceUpdate: { [weak self] source in
+                    guard let self else { return }
+                    currentConfig.agent.preferredAgentSource = source
+                    try saveAndNotify()
+                }
             )
         case .display:
             child = DisplaySettingsViewController(

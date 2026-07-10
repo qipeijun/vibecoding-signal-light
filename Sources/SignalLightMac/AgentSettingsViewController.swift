@@ -7,6 +7,7 @@ final class AgentSettingsViewController: NSViewController {
     private var agentConfig: AgentConfig
     private var directoryField: NSTextField!
     private var sourcePopup: NSPopUpButton!
+    private let contentWidth: CGFloat = 512
 
     init(config: AgentConfig, onUpdate: @escaping (AgentConfig) throws -> Void) {
         self.agentConfig = config
@@ -19,7 +20,16 @@ final class AgentSettingsViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 390))
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 390))
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 8, right: 0)
+
+        let docView = NSView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 560))
+        scrollView.documentView = docView
+        view = scrollView
     }
 
     override func viewDidLoad() {
@@ -28,6 +38,10 @@ final class AgentSettingsViewController: NSViewController {
     }
 
     private func buildUI() {
+        guard let docView = (view as? NSScrollView)?.documentView else {
+            return
+        }
+
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.spacing = 12
@@ -156,12 +170,13 @@ final class AgentSettingsViewController: NSViewController {
         stack.addArrangedSubview(actionRow)
 
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        docView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.widthAnchor.constraint(equalToConstant: 512),
+            stack.topAnchor.constraint(equalTo: docView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: docView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: docView.trailingAnchor),
+            stack.widthAnchor.constraint(equalToConstant: contentWidth),
+            stack.bottomAnchor.constraint(equalTo: docView.bottomAnchor, constant: -8),
         ])
     }
 

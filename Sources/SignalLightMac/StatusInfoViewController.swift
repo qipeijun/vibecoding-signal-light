@@ -25,11 +25,20 @@ final class StatusInfoViewController: NSViewController {
     private let quotaSummaryLabel = NSTextField(labelWithString: "")
     private let quotaPrimaryRow = QuotaWindowRowView(title: "Auto")
     private let quotaSecondaryRow = QuotaWindowRowView(title: "API")
+    private let onPreferredSourceUpdate: (PreferredAgentSource) throws -> Void
+    private var sourceRadioButtons: [NSButton] = []
+    private let contentWidth: CGFloat = 512
 
-    init(configStore: SignalLightConfigStore, config: SignalLightConfig, stateStore: SignalStateStore) {
+    init(
+        configStore: SignalLightConfigStore,
+        config: SignalLightConfig,
+        stateStore: SignalStateStore,
+        onPreferredSourceUpdate: @escaping (PreferredAgentSource) throws -> Void
+    ) {
         self.configStore = configStore
         self.config = config
         self.stateStore = stateStore
+        self.onPreferredSourceUpdate = onPreferredSourceUpdate
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -38,7 +47,16 @@ final class StatusInfoViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 390))
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 390))
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 8, right: 0)
+
+        let docView = NSView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 820))
+        scrollView.documentView = docView
+        view = scrollView
     }
 
     override func viewDidLoad() {
@@ -65,15 +83,24 @@ final class StatusInfoViewController: NSViewController {
             quotaProvider = nextProvider
             refreshQuota()
         }
+
+        syncSourceRadioSelection()
     }
 
     private func buildUI() {
+        guard let docView = (view as? NSScrollView)?.documentView else {
+            return
+        }
+
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 8, right: 4)
         stack.alignment = .leading
 
+        stack.addArrangedSubview(makeSourceFilterSection())
+
+        stack.addArrangedSubview(makeSeparator())
         stack.addArrangedSubview(makeSectionTitle("状态详情"))
         stack.addArrangedSubview(makeRow(title: "状态", value: stateValue, emphasize: true))
         stack.addArrangedSubview(makeRow(title: "来源程序", value: sourceValue))
@@ -96,13 +123,85 @@ final class StatusInfoViewController: NSViewController {
         stack.addArrangedSubview(hint)
 
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        docView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.widthAnchor.constraint(equalToConstant: 512),
+            stack.topAnchor.constraint(equalTo: docView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: docView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: docView.trailingAnchor),
+            stack.widthAnchor.constraint(equalToConstant: contentWidth),
+            stack.bottomAnchor.constraint(equalTo: docView.bottomAnchor, constant: -8),
         ])
+    }
+
+    private func makeSourceFilterSection() -> NSView {
+        let container = NSStackView()
+        container.orientation = .vertical
+        container.spacing = 8
+        container.alignment = .leading
+
+        container.addArrangedSubview(makeSectionTitle("监听来源"))
+
+        let filterHint = NSTextField(
+            labelWithString: "只展示所选应用的状态；多个 Agent 同时运行时不会互相覆盖。"
+        )
+        filterHint.font = NSFont.systemFont(ofSize: 11)
+        filterHint.textColor = .secondaryLabelColor
+        filterHint.lineBreakMode = .byWordWrapping
+        filterHint.preferredMaxLayoutWidth = 500
+        container.addArrangedSubview(filterHint)
+
+        sourceRadioButtons = []
+        let sources = PreferredAgentSource.allCases
+        let columnsPerRow = 3
+        var index = 0
+        while index < sources.count {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.spacing = 16
+            row.alignment = .centerY
+            let end = min(index + columnsPerRow, sources.count)
+            for sourceIndex in index..<end {
+                let source = sources[sourceIndex]
+                let button = NSButton(
+                    radioButtonWithTitle: source.displayName,
+                    target: self,
+                    action: #selector(sourceRadioChanged(_:))
+                )
+                button.tag = sourceIndex
+                sourceRadioButtons.append(button)
+                row.addArrangedSubview(button)
+            }
+            container.addArrangedSubview(row)
+            index += columnsPerRow
+        }
+
+        syncSourceRadioSelection()
+        return container
+    }
+
+    private func syncSourceRadioSelection() {
+        let preferred = configStore.effectiveAgentConfig(from: config).preferredAgentSource
+        guard let selectedIndex = PreferredAgentSource.allCases.firstIndex(of: preferred) else {
+            return
+        }
+        for (index, button) in sourceRadioButtons.enumerated() {
+            button.state = index == selectedIndex ? .on : .off
+        }
+    }
+
+    @objc private func sourceRadioChanged(_ sender: NSButton) {
+        let index = sender.tag
+        guard index >= 0, index < PreferredAgentSource.allCases.count else {
+            return
+        }
+        for (buttonIndex, button) in sourceRadioButtons.enumerated() {
+            button.state = buttonIndex == index ? .on : .off
+        }
+        do {
+            try onPreferredSourceUpdate(PreferredAgentSource.allCases[index])
+        } catch {
+            showSettingsError(error)
+        }
     }
 
     private func preferredRecord() -> SessionRecord? {
