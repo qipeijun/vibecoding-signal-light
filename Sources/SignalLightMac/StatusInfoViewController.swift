@@ -2,22 +2,29 @@ import AppKit
 import SignalLightShared
 
 final class StatusInfoViewController: NSViewController {
+    private enum QuotaProvider {
+        case cursor
+        case codex
+    }
+
     private let configStore: SignalLightConfigStore
-    private let quotaReader = CodexRateLimitReader()
+    private let codexQuotaReader = CodexRateLimitReader()
+    private let cursorQuotaReader = CursorUsageReader()
     private var stateStore: SignalStateStore
     private var config: SignalLightConfig
-    private var quotaState: CodexQuotaState = .loading
+    private var quotaProvider: QuotaProvider = .cursor
 
     private let stateValue = NSTextField(labelWithString: "")
     private let sourceValue = NSTextField(labelWithString: "")
     private let modelValue = NSTextField(labelWithString: "")
     private let updatedValue = NSTextField(labelWithString: "")
     private let directoryValue = NSTextField(labelWithString: "")
+    private let quotaTitleValue = NSTextField(labelWithString: "Cursor 额度")
     private let quotaStatusValue = NSTextField(labelWithString: "")
     private let quotaSummaryValue = NSTextField(labelWithString: "")
     private let quotaSummaryLabel = NSTextField(labelWithString: "")
-    private let quotaPrimaryRow = QuotaWindowRowView(title: "5 小时")
-    private let quotaSecondaryRow = QuotaWindowRowView(title: "7 天")
+    private let quotaPrimaryRow = QuotaWindowRowView(title: "Auto")
+    private let quotaSecondaryRow = QuotaWindowRowView(title: "API")
 
     init(configStore: SignalLightConfigStore, config: SignalLightConfig, stateStore: SignalStateStore) {
         self.configStore = configStore
@@ -37,6 +44,7 @@ final class StatusInfoViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         buildUI()
+        quotaProvider = resolveQuotaProvider(from: preferredRecord())
         update(config: config, stateStore: stateStore)
         refreshQuota()
     }
@@ -46,11 +54,17 @@ final class StatusInfoViewController: NSViewController {
         self.stateStore = stateStore
 
         let record = preferredRecord()
+        let nextProvider = resolveQuotaProvider(from: record)
         stateValue.stringValue = stateStore.state.displayName
         sourceValue.stringValue = sourceName(from: record) ?? "当前状态未提供来源"
         modelValue.stringValue = cleanText(record?.model) ?? "当前状态未提供模型"
         updatedValue.stringValue = formattedTimestamp(stateStore.updatedAt ?? record?.updatedAt)
         directoryValue.stringValue = stateStore.stateDirectoryURL.path
+
+        if nextProvider != quotaProvider {
+            quotaProvider = nextProvider
+            refreshQuota()
+        }
     }
 
     private func buildUI() {
@@ -72,7 +86,7 @@ final class StatusInfoViewController: NSViewController {
 
         stack.addArrangedSubview(makeSeparator())
         stack.addArrangedSubview(makeQuotaCard())
-        applyQuotaState(.loading)
+        applyLoadingQuotaState()
 
         let hint = NSTextField(labelWithString: "状态由本机 Agent hook 写入，菜单栏和悬浮灯会实时读取这里的数据。")
         hint.font = NSFont.systemFont(ofSize: 11)
@@ -121,26 +135,97 @@ final class StatusInfoViewController: NSViewController {
         return "重置 \(StatusInfoFormatters.resetTime.string(from: Date(timeIntervalSince1970: TimeInterval(value))))"
     }
 
+    private func resolveQuotaProvider(from record: SessionRecord?) -> QuotaProvider {
+        if isCursorSessionSource(record?.source) {
+            return .cursor
+        }
+        if let bundleIdentifier = record?.source?.bundleIdentifier?.lowercased(),
+           bundleIdentifier.contains("codex") || bundleIdentifier.contains("openai")
+        {
+            return .codex
+        }
+        if CursorAuthStore.loadCredentials() != nil {
+            return .cursor
+        }
+        return .codex
+    }
+
     @objc private func refreshQuota() {
-        applyQuotaState(.loading)
-        quotaReader.fetch { [weak self] state in
-            DispatchQueue.main.async {
-                self?.applyQuotaState(state)
+        applyLoadingQuotaState()
+        switch quotaProvider {
+        case .cursor:
+            cursorQuotaReader.fetch { [weak self] state in
+                DispatchQueue.main.async {
+                    self?.applyCursorQuotaState(state)
+                }
+            }
+        case .codex:
+            codexQuotaReader.fetch { [weak self] state in
+                DispatchQueue.main.async {
+                    self?.applyCodexQuotaState(state)
+                }
             }
         }
     }
 
-    private func applyQuotaState(_ state: CodexQuotaState) {
-        quotaState = state
+    private func applyLoadingQuotaState() {
+        quotaTitleValue.stringValue = quotaProvider == .cursor ? "Cursor 额度" : "Codex 额度"
+        quotaSummaryValue.stringValue = "--%"
+        quotaSummaryValue.textColor = .secondaryLabelColor
+        quotaSummaryLabel.stringValue = quotaProvider == .cursor ? "总用量剩余" : "短窗口剩余"
+        quotaStatusValue.stringValue = quotaProvider == .cursor ? "正在读取 Cursor 额度..." : "正在读取 Codex 额度..."
+        quotaPrimaryRow.isHidden = true
+        quotaSecondaryRow.isHidden = true
+    }
+
+    private func applyCursorQuotaState(_ state: CursorQuotaState) {
+        guard quotaProvider == .cursor else {
+            return
+        }
+
         switch state {
         case .loading:
-            quotaSummaryValue.stringValue = "--%"
-            quotaSummaryValue.textColor = .secondaryLabelColor
-            quotaSummaryLabel.stringValue = "短窗口剩余"
-            quotaStatusValue.stringValue = "正在读取 Codex 额度..."
+            applyLoadingQuotaState()
+        case .unavailable(let reason):
+            quotaTitleValue.stringValue = "Cursor 额度"
+            quotaSummaryValue.stringValue = "不可用"
+            quotaSummaryValue.textColor = .systemRed
+            quotaSummaryLabel.stringValue = "读取失败"
+            quotaStatusValue.stringValue = reason
             quotaPrimaryRow.isHidden = true
             quotaSecondaryRow.isHidden = true
+        case .loaded(let snapshot):
+            let remaining = snapshot.totalRemainingPercent
+            quotaTitleValue.stringValue = "Cursor 额度"
+            quotaSummaryValue.stringValue = "\(remaining)%"
+            quotaSummaryValue.textColor = quotaTextColor(forRemainingPercent: remaining)
+            quotaSummaryLabel.stringValue = cursorSummaryLabel(from: snapshot)
+            quotaStatusValue.stringValue = cursorQuotaStatus(from: snapshot)
+            quotaPrimaryRow.isHidden = false
+            quotaSecondaryRow.isHidden = false
+            quotaPrimaryRow.update(
+                window: snapshot.usageWindow(usedPercent: snapshot.autoUsedPercent, resetsAt: snapshot.billingCycleEnd),
+                defaultTitle: "Auto",
+                resetText: formattedResetDate(snapshot.billingCycleEnd)
+            )
+            quotaSecondaryRow.update(
+                window: snapshot.usageWindow(usedPercent: snapshot.apiUsedPercent, resetsAt: snapshot.billingCycleEnd),
+                defaultTitle: "API",
+                resetText: formattedResetDate(snapshot.billingCycleEnd)
+            )
+        }
+    }
+
+    private func applyCodexQuotaState(_ state: CodexQuotaState) {
+        guard quotaProvider == .codex else {
+            return
+        }
+
+        switch state {
+        case .loading:
+            applyLoadingQuotaState()
         case .unavailable(let reason):
+            quotaTitleValue.stringValue = "Codex 额度"
             quotaSummaryValue.stringValue = "不可用"
             quotaSummaryValue.textColor = .systemRed
             quotaSummaryLabel.stringValue = "读取失败"
@@ -149,6 +234,7 @@ final class StatusInfoViewController: NSViewController {
             quotaSecondaryRow.isHidden = true
         case .loaded(let snapshot):
             let primaryRemaining = snapshot.primary.remainingPercent
+            quotaTitleValue.stringValue = "Codex 额度"
             quotaSummaryValue.stringValue = "\(primaryRemaining)%"
             quotaSummaryValue.textColor = quotaTextColor(forRemainingPercent: primaryRemaining)
             quotaSummaryLabel.stringValue = "\(snapshot.primary.displayTitle(defaultTitle: "5 小时"))剩余"
@@ -166,6 +252,44 @@ final class StatusInfoViewController: NSViewController {
                 resetText: formattedResetTime(snapshot.secondary.resetsAt)
             )
         }
+    }
+
+    private func cursorQuotaStatus(from snapshot: CursorUsageSnapshot) -> String {
+        var parts: [String] = []
+        if let planType = snapshot.formattedPlanType {
+            parts.append(planType)
+        }
+        if let email = cleanText(snapshot.email) {
+            parts.append(email)
+        }
+        if let displayMessage = cleanText(snapshot.displayMessage) {
+            parts.append(displayMessage)
+        }
+        return parts.isEmpty ? "Cursor" : parts.joined(separator: " · ")
+    }
+
+    private func cursorSummaryLabel(from snapshot: CursorUsageSnapshot) -> String {
+        if let limitCents = snapshot.includedLimitCents, let spendCents = snapshot.totalSpendCents, limitCents > 0 {
+            return "已用 \(formatUSD(cents: min(spendCents, limitCents))) / \(formatUSD(cents: limitCents))"
+        }
+        return "总用量剩余"
+    }
+
+    private func formattedResetDate(_ value: Date?) -> String {
+        guard let value else {
+            return "暂无重置时间"
+        }
+        return "重置 \(StatusInfoFormatters.resetTime.string(from: value))"
+    }
+
+    private func formatUSD(cents: Int) -> String {
+        let amount = NSDecimalNumber(value: cents).dividing(by: 100)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 2
+        return formatter.string(from: amount) ?? "$\(amount)"
     }
 
     private func quotaStatus(from snapshot: CodexRateLimitSnapshot) -> String {
@@ -217,10 +341,9 @@ final class StatusInfoViewController: NSViewController {
         titleStack.spacing = 4
         titleStack.alignment = .leading
 
-        let title = NSTextField(labelWithString: "Codex 额度")
-        title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        title.textColor = .labelColor
-        titleStack.addArrangedSubview(title)
+        quotaTitleValue.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        quotaTitleValue.textColor = .labelColor
+        titleStack.addArrangedSubview(quotaTitleValue)
 
         quotaStatusValue.font = NSFont.systemFont(ofSize: 11)
         quotaStatusValue.textColor = .secondaryLabelColor

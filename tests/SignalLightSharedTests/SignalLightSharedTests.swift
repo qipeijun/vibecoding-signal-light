@@ -59,6 +59,21 @@ struct SignalLightSharedTests {
     }
 
     @Test
+    func cursorQuotaDecodesCurrentPeriodUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaDecodesCurrentPeriodUsage()
+    }
+
+    @Test
+    func cursorQuotaRequiresPlanUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaRequiresPlanUsage()
+    }
+
+    @Test
+    func cursorSessionSourceDetection() throws {
+        try SignalLightSharedTestSupport.cursorSessionSourceDetection()
+    }
+
+    @Test
     func hookDiagnosticsReportsMissingHooks() throws {
         try SignalLightSharedTestSupport.hookDiagnosticsReportsMissingHooks()
     }
@@ -118,6 +133,18 @@ final class SignalLightSharedTests: XCTestCase {
 
     func testCodexQuotaWindowDisplayHelpers() throws {
         try SignalLightSharedTestSupport.codexQuotaWindowDisplayHelpers()
+    }
+
+    func testCursorQuotaDecodesCurrentPeriodUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaDecodesCurrentPeriodUsage()
+    }
+
+    func testCursorQuotaRequiresPlanUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaRequiresPlanUsage()
+    }
+
+    func testCursorSessionSourceDetection() throws {
+        try SignalLightSharedTestSupport.cursorSessionSourceDetection()
     }
 
     func testHookDiagnosticsReportsMissingHooks() throws {
@@ -322,6 +349,72 @@ private enum SignalLightSharedTestSupport {
         try expectEqual(actualWindow.remainingPercent, 0)
         try expectEqual(actualWindow.displayTitle(defaultTitle: "5 小时"), "90 分钟窗口")
         try expectEqual(CodexRateLimitWindow.formatDuration(minutes: 10080), "7 天")
+    }
+
+    static func cursorQuotaDecodesCurrentPeriodUsage() throws {
+        let data = """
+        {
+          "billingCycleEnd": "1783996754000",
+          "displayMessage": "You've used 39% of your included total usage",
+          "planUsage": {
+            "totalSpend": 20062,
+            "includedSpend": 7000,
+            "limit": 7000,
+            "autoPercentUsed": 44.6625,
+            "apiPercentUsed": 19.972727272727273,
+            "totalPercentUsed": 39.33725490196078
+          }
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try CursorUsagePayload.decodeSnapshot(
+            from: data,
+            planType: "pro_plus",
+            email: "demo@example.com"
+        )
+
+        try expectEqual(snapshot.planType, "pro_plus")
+        try expectEqual(snapshot.email, "demo@example.com")
+        try expectEqual(snapshot.totalUsedPercent, 39)
+        try expectEqual(snapshot.autoUsedPercent, 45)
+        try expectEqual(snapshot.apiUsedPercent, 20)
+        try expectEqual(snapshot.totalRemainingPercent, 61)
+        try expectEqual(snapshot.includedLimitCents, 7000)
+        try expectEqual(snapshot.totalSpendCents, 20062)
+        try expectEqual(snapshot.formattedPlanType, "Pro Plus")
+    }
+
+    static func cursorQuotaRequiresPlanUsage() throws {
+        let data = """
+        { "billingCycleEnd": "1783996754000" }
+        """.data(using: .utf8)!
+
+        do {
+            _ = try CursorUsagePayload.decodeSnapshot(from: data)
+        } catch let error as CursorUsageDecodingError {
+            try expectEqual(error, .missingPlanUsage)
+            return
+        }
+        throw TestFailure("Expected missing plan usage decoding error")
+    }
+
+    static func cursorSessionSourceDetection() throws {
+        let cursorSource = SessionSource(
+            bundleIdentifier: "com.todesktop.230313mzl4w4u92",
+            processIdentifier: 1,
+            localizedName: "Cursor",
+            capturedAt: 1
+        )
+        let terminalSource = SessionSource(
+            bundleIdentifier: "com.apple.Terminal",
+            processIdentifier: 2,
+            localizedName: "终端",
+            capturedAt: 1
+        )
+
+        try expectEqual(isCursorSessionSource(cursorSource), true)
+        try expectEqual(isCursorSessionSource(terminalSource), false)
+        try expectEqual(isCursorSessionSource(nil), false)
     }
 
     static func hookDiagnosticsReportsMissingHooks() throws {
