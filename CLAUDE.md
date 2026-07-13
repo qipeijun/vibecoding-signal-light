@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-Vibecoding Signal Light 是一个 macOS 原生交通灯工具，将 Codex、Claude Code 等本地 AI Agent 的状态以悬浮窗、菜单栏图标和 Touch Bar 的形式可视化展示。
+Vibecoding Signal Light 是一个 macOS 原生交通灯工具，将 Codex、Claude Code、Cursor 等本地 AI Agent 的状态以悬浮窗、菜单栏图标和 Touch Bar 的形式可视化展示。
 
 ## 常用命令
 
@@ -25,6 +25,7 @@ swift build --package-path .           # 构建 Swift 目标
 # Hook 测试
 ./scripts/codex-signal-hook Stop       # Codex hook
 echo '{"event":"PreToolUse"}' | ./scripts/claude-code-signal-hook  # Claude Code hook
+echo '{"hook_event_name":"stop","conversation_id":"demo"}' | ./scripts/cursor-signal-hook  # Cursor hook
 
 # 构建安装包
 ./scripts/build-installer              # 输出到 dist/Signal Light Installer.pkg
@@ -46,6 +47,7 @@ echo '{"event":"PreToolUse"}' | ./scripts/claude-code-signal-hook  # Claude Code
 | `cli.py` | CLI 入口（`signal-light` 命令），子命令：`play`/`list`/`status`/`codex-hook`/`claude-code-hook`/`test`/`app` |
 | `codex_hook.py` | Codex hook 适配器，解析 Codex hook 输入的 JSON/环境变量，映射到信号名，支持从 payload 的 status/error 字段检测失败 |
 | `claude_code_hook.py` | Claude Code hook 适配器，支持 `stop_reason` 检测（`max_tokens`/`error` → blocked） |
+| `cursor_hook.py` | Cursor hook 适配器，解析 Cursor hook 输入的 JSON（camelCase 事件名），映射到信号名，支持 stop 的 status 字段检测失败 |
 
 ### Swift 层
 
@@ -57,7 +59,7 @@ echo '{"event":"PreToolUse"}' | ./scripts/claude-code-signal-hook  # Claude Code
 | SignalLightMac | `StatusIcon.swift` | 菜单栏图标（36x18 横向三灯） |
 | SignalLightMac | `TouchBarSignalView.swift` | Touch Bar 视图（132x30） |
 | SignalLightCLI | `StateStore.swift` | Swift 版 CLI 的状态管理实现（功能与 Python runtime 对等） |
-| SignalLightCLI | `HookParsing.swift` | Swift 版 hook 解析（功能与 Python codex/claude hook 对等） |
+| SignalLightCLI | `HookParsing.swift` | Swift 版 hook 解析（功能与 Python codex/claude/cursor hook 对等） |
 | SignalLightCLI | `AppLifecycle.swift` | 应用卸载和生命周期管理 |
 
 关键点：CLI 有两套实现（Python 和 Swift），安装后的 `/usr/local/bin/signal-light` 指向 app bundle 内的 Swift 编译产物，不依赖 Python。

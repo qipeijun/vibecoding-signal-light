@@ -8,6 +8,8 @@ final class SignalStateStore {
     private(set) var state: SignalState = .idle
     private(set) var updatedAt: Double?
     private(set) var sessionState = SessionState(sessions: [:])
+    private var preferredAgentSource: PreferredAgentSource = .auto
+    private var sessionTTL: Double = AgentConfig.default.sessionTTLSeconds
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment, stateDirectory: String? = nil) {
         let root = stateDirectory ?? environment["SIGNAL_LIGHT_STATE_DIR"] ?? "/private/tmp/signal-light"
@@ -16,19 +18,32 @@ final class SignalStateStore {
         sessionFileURL = stateDirectoryURL.appendingPathComponent("sessions.json")
     }
 
+    func setPresentationPreferences(preferredAgentSource: PreferredAgentSource, sessionTTL: Double) {
+        self.preferredAgentSource = preferredAgentSource
+        self.sessionTTL = sessionTTL
+    }
+
     func refresh() -> Bool {
         refreshSessions()
-        guard let data = try? Data(contentsOf: fileURL),
-              let status = try? JSONDecoder().decode(SignalStatus.self, from: data),
-              let nextState = SignalState(rawValue: status.aggregate)
-        else {
-            return false
-        }
+        let nextState = resolvedState()
+        let fileUpdatedAt = (try? Data(contentsOf: fileURL))
+            .flatMap { try? JSONDecoder().decode(SignalStatus.self, from: $0) }?
+            .updatedAt
 
         let didChange = state != nextState
         state = nextState
-        updatedAt = status.updatedAt
+        updatedAt = fileUpdatedAt
         return didChange
+    }
+
+    func resolvedState(now: Double = Date().timeIntervalSince1970) -> SignalState {
+        let aggregate = aggregateSessions(
+            sessionState.sessions,
+            preferred: preferredAgentSource,
+            now: now,
+            sessionTTL: sessionTTL
+        )
+        return SignalState(rawValue: aggregate) ?? .idle
     }
 
     private func refreshSessions() {

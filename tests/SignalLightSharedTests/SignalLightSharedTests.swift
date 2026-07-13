@@ -59,6 +59,26 @@ struct SignalLightSharedTests {
     }
 
     @Test
+    func cursorQuotaDecodesCurrentPeriodUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaDecodesCurrentPeriodUsage()
+    }
+
+    @Test
+    func cursorQuotaRequiresPlanUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaRequiresPlanUsage()
+    }
+
+    @Test
+    func cursorSessionSourceDetection() throws {
+        try SignalLightSharedTestSupport.cursorSessionSourceDetection()
+    }
+
+    @Test
+    func preferredAgentSourceFiltersSessions() throws {
+        try SignalLightSharedTestSupport.preferredAgentSourceFiltersSessions()
+    }
+
+    @Test
     func hookDiagnosticsReportsMissingHooks() throws {
         try SignalLightSharedTestSupport.hookDiagnosticsReportsMissingHooks()
     }
@@ -76,6 +96,21 @@ struct SignalLightSharedTests {
     @Test
     func pathMergePreservesUserPathOrderAndDeduplicatesDefaults() throws {
         try SignalLightSharedTestSupport.pathMergePreservesUserPathOrderAndDeduplicatesDefaults()
+    }
+
+    @Test
+    func cursorHookEnvelopeFormatResolution() throws {
+        try SignalLightSharedTestSupport.cursorHookEnvelopeFormatResolution()
+    }
+
+    @Test
+    func cursorHookInstallerWritesFlatFormatOnFreshInstall() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerWritesFlatFormatOnFreshInstall()
+    }
+
+    @Test
+    func cursorHookInstallerFollowsExistingNestedFormat() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerFollowsExistingNestedFormat()
     }
 }
 #elseif canImport(XCTest)
@@ -120,6 +155,22 @@ final class SignalLightSharedTests: XCTestCase {
         try SignalLightSharedTestSupport.codexQuotaWindowDisplayHelpers()
     }
 
+    func testCursorQuotaDecodesCurrentPeriodUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaDecodesCurrentPeriodUsage()
+    }
+
+    func testCursorQuotaRequiresPlanUsage() throws {
+        try SignalLightSharedTestSupport.cursorQuotaRequiresPlanUsage()
+    }
+
+    func testCursorSessionSourceDetection() throws {
+        try SignalLightSharedTestSupport.cursorSessionSourceDetection()
+    }
+
+    func testPreferredAgentSourceFiltersSessions() throws {
+        try SignalLightSharedTestSupport.preferredAgentSourceFiltersSessions()
+    }
+
     func testHookDiagnosticsReportsMissingHooks() throws {
         try SignalLightSharedTestSupport.hookDiagnosticsReportsMissingHooks()
     }
@@ -134,6 +185,18 @@ final class SignalLightSharedTests: XCTestCase {
 
     func testPathMergePreservesUserPathOrderAndDeduplicatesDefaults() throws {
         try SignalLightSharedTestSupport.pathMergePreservesUserPathOrderAndDeduplicatesDefaults()
+    }
+
+    func testCursorHookEnvelopeFormatResolution() throws {
+        try SignalLightSharedTestSupport.cursorHookEnvelopeFormatResolution()
+    }
+
+    func testCursorHookInstallerWritesFlatFormatOnFreshInstall() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerWritesFlatFormatOnFreshInstall()
+    }
+
+    func testCursorHookInstallerFollowsExistingNestedFormat() throws {
+        try SignalLightSharedTestSupport.cursorHookInstallerFollowsExistingNestedFormat()
     }
 }
 #endif
@@ -324,17 +387,145 @@ private enum SignalLightSharedTestSupport {
         try expectEqual(CodexRateLimitWindow.formatDuration(minutes: 10080), "7 天")
     }
 
+    static func cursorQuotaDecodesCurrentPeriodUsage() throws {
+        let data = """
+        {
+          "billingCycleEnd": "1783996754000",
+          "displayMessage": "You've used 39% of your included total usage",
+          "planUsage": {
+            "totalSpend": 20062,
+            "includedSpend": 7000,
+            "limit": 7000,
+            "autoPercentUsed": 44.6625,
+            "apiPercentUsed": 19.972727272727273,
+            "totalPercentUsed": 39.33725490196078
+          }
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try CursorUsagePayload.decodeSnapshot(
+            from: data,
+            planType: "pro_plus",
+            email: "demo@example.com"
+        )
+
+        try expectEqual(snapshot.planType, "pro_plus")
+        try expectEqual(snapshot.email, "demo@example.com")
+        try expectEqual(snapshot.totalUsedPercent, 39)
+        try expectEqual(snapshot.autoUsedPercent, 45)
+        try expectEqual(snapshot.apiUsedPercent, 20)
+        try expectEqual(snapshot.totalRemainingPercent, 61)
+        try expectEqual(snapshot.includedLimitCents, 7000)
+        try expectEqual(snapshot.totalSpendCents, 20062)
+        try expectEqual(snapshot.formattedPlanType, "Pro Plus")
+    }
+
+    static func cursorQuotaRequiresPlanUsage() throws {
+        let data = """
+        { "billingCycleEnd": "1783996754000" }
+        """.data(using: .utf8)!
+
+        do {
+            _ = try CursorUsagePayload.decodeSnapshot(from: data)
+        } catch let error as CursorUsageDecodingError {
+            try expectEqual(error, .missingPlanUsage)
+            return
+        }
+        throw TestFailure("Expected missing plan usage decoding error")
+    }
+
+    static func cursorSessionSourceDetection() throws {
+        let cursorSource = SessionSource(
+            bundleIdentifier: "com.todesktop.230313mzl4w4u92",
+            processIdentifier: 1,
+            localizedName: "Cursor",
+            capturedAt: 1
+        )
+        let terminalSource = SessionSource(
+            bundleIdentifier: "com.apple.Terminal",
+            processIdentifier: 2,
+            localizedName: "终端",
+            capturedAt: 1
+        )
+
+        try expectEqual(isCursorSessionSource(cursorSource), true)
+        try expectEqual(isCursorSessionSource(terminalSource), false)
+        try expectEqual(isCursorSessionSource(nil), false)
+    }
+
+    static func preferredAgentSourceFiltersSessions() throws {
+        let now = 1_000_000.0
+        let sessions: [String: SessionRecord] = [
+            "cursor": SessionRecord(
+                signal: "working",
+                updatedAt: now - 10,
+                source: SessionSource(
+                    bundleIdentifier: "com.todesktop.230313mzl4w4u92",
+                    processIdentifier: 1,
+                    localizedName: "Cursor",
+                    capturedAt: now
+                ),
+                model: "cursor-model"
+            ),
+            "ses_demo_open_code": SessionRecord(
+                signal: "working",
+                updatedAt: now - 5,
+                source: SessionSource(
+                    bundleIdentifier: "com.googlecode.iterm2",
+                    processIdentifier: 2,
+                    localizedName: "iTerm",
+                    capturedAt: now
+                ),
+                model: "deepseek-v4-pro"
+            ),
+            "terminal": SessionRecord(
+                signal: "attention",
+                updatedAt: now - 1,
+                source: SessionSource(
+                    bundleIdentifier: "com.googlecode.iterm2",
+                    processIdentifier: 3,
+                    localizedName: "iTerm",
+                    capturedAt: now
+                ),
+                model: "default"
+            ),
+        ]
+
+        try expectEqual(aggregateSessions(sessions), "attention")
+        try expectEqual(
+            aggregateSessions(sessions, preferred: .cursor, now: now, sessionTTL: 86400),
+            "working"
+        )
+        try expectEqual(
+            aggregateSessions(sessions, preferred: .opencode, now: now, sessionTTL: 86400),
+            "working"
+        )
+        try expectEqual(
+            aggregateSessions(sessions, preferred: .terminal, now: now, sessionTTL: 86400),
+            "attention"
+        )
+        try expectEqual(sessionAgentKind(sessionKey: "ses_demo", source: sessions["ses_demo_open_code"]?.source), .opencode)
+        try expectEqual(sessionAgentKind(sessionKey: "cursor", source: sessions["cursor"]?.source), .cursor)
+        try expectEqual(sessionAgentKind(sessionKey: "terminal", source: sessions["terminal"]?.source), .terminal)
+        try expectEqual(isOpenCodePayload(["session_id": "ses_abc123"]), true)
+        try expectEqual(isOpenCodePayload(["conversation_id": "17fa838a-f77f-4b21-93ec-bc81b42d6ec7"]), false)
+    }
+
     static func hookDiagnosticsReportsMissingHooks() throws {
         let tempDir = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let reports = checkSignalLightHooks(homeDirectory: tempDir)
 
-        try expectEqual(reports.count, 2)
+        try expectEqual(reports.count, 4)
         try expect(reports.allSatisfy { !$0.ok }, "fresh home should report missing hooks")
         try expect(
             reports.contains { $0.title == "Claude Code hooks" && $0.message == "未找到配置文件" },
             "Claude settings should be reported as missing"
+        )
+        try expect(
+            reports.contains { $0.title == "OpenCode hooks" && $0.message == "未找到配置文件" },
+            "OpenCode hooks should be reported as missing"
         )
     }
 
@@ -357,7 +548,7 @@ private enum SignalLightSharedTestSupport {
         let installReports = try installSignalLightHooks(homeDirectory: tempDir)
         let checkReports = checkSignalLightHooks(homeDirectory: tempDir)
 
-        try expectEqual(installReports.count, 2)
+        try expectEqual(installReports.count, 4)
         try expect(installReports.allSatisfy(\.ok), "install reports should pass")
         try expect(checkReports.allSatisfy(\.ok), "installed hooks should check cleanly")
 
@@ -381,8 +572,12 @@ private enum SignalLightSharedTestSupport {
 
         let codexDir = tempDir.appendingPathComponent(".codex", isDirectory: true)
         let claudeDir = tempDir.appendingPathComponent(".claude", isDirectory: true)
+        let cursorDir = tempDir.appendingPathComponent(".cursor", isDirectory: true)
+        let openCodeDir = tempDir.appendingPathComponent(".config/opencode", isDirectory: true)
         try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cursorDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: openCodeDir, withIntermediateDirectories: true)
 
         try hookFixtureJSON(command: "/opt/homebrew/bin/codex-signal-hook", events: [
             "SessionStart",
@@ -414,9 +609,117 @@ private enum SignalLightSharedTestSupport {
             "SessionEnd",
         ]).data(using: .utf8)!.write(to: claudeDir.appendingPathComponent("settings.json"))
 
+        try hookFixtureJSON(command: "/opt/homebrew/bin/cursor-signal-hook", events: [
+            "sessionStart",
+            "beforeSubmitPrompt",
+            "preToolUse",
+            "postToolUse",
+            "postToolUseFailure",
+            "subagentStart",
+            "subagentStop",
+            "beforeShellExecution",
+            "afterShellExecution",
+            "beforeMCPExecution",
+            "afterMCPExecution",
+            "beforeReadFile",
+            "afterFileEdit",
+            "preCompact",
+            "afterAgentResponse",
+            "afterAgentThought",
+            "stop",
+            "sessionEnd",
+        ]).data(using: .utf8)!.write(to: cursorDir.appendingPathComponent("hooks.json"))
+
+        try hookFixtureJSON(command: "/opt/homebrew/bin/codex-signal-hook", events: [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PermissionRequest",
+            "PostToolUse",
+            "Stop",
+        ]).data(using: .utf8)!.write(to: openCodeDir.appendingPathComponent("hooks.json"))
+
         let reports = checkSignalLightHooks(homeDirectory: tempDir)
 
         try expect(reports.allSatisfy(\.ok), "custom Signal Light command paths should be accepted")
+    }
+
+    static func cursorHookEnvelopeFormatResolution() throws {
+        let nestedRoot: [String: Any] = [
+            "hooks": [
+                "stop": [
+                    [
+                        "hooks": [
+                            ["type": "command", "command": "/usr/bin/other-hook"],
+                        ],
+                    ],
+                ],
+            ],
+        ]
+        let flatRoot: [String: Any] = [
+            "hooks": [
+                "stop": [
+                    ["type": "command", "command": "/usr/bin/other-hook"],
+                ],
+            ],
+        ]
+
+        try expectEqual(resolveCursorHookEnvelopeFormat(existingRoot: nestedRoot, cursorAppSearchPaths: []), .nested)
+        try expectEqual(resolveCursorHookEnvelopeFormat(existingRoot: flatRoot, cursorAppSearchPaths: []), .flat)
+        try expectEqual(resolveCursorHookEnvelopeFormat(existingRoot: nil, cursorAppSearchPaths: []), .flat)
+
+        let fakeCursorApp = try makeFakeCursorApp(version: "3.9.0")
+        defer { try? FileManager.default.removeItem(at: fakeCursorApp) }
+        try expectEqual(
+            resolveCursorHookEnvelopeFormat(existingRoot: nil, cursorAppSearchPaths: [fakeCursorApp]),
+            .nested
+        )
+
+        let newCursorApp = try makeFakeCursorApp(version: "3.10.0")
+        defer { try? FileManager.default.removeItem(at: newCursorApp) }
+        try expectEqual(
+            resolveCursorHookEnvelopeFormat(existingRoot: nil, cursorAppSearchPaths: [newCursorApp]),
+            .flat
+        )
+    }
+
+    static func cursorHookInstallerWritesFlatFormatOnFreshInstall() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        _ = try installSignalLightHooks(homeDirectory: tempDir)
+
+        let path = tempDir.appendingPathComponent(".cursor/hooks.json")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any]
+        let hooks = object?["hooks"] as? [String: Any]
+        let preToolUse = hooks?["preToolUse"] as? [[String: Any]]
+        let first = preToolUse?.first
+
+        try expectEqual(first?["command"] as? String, "/usr/local/bin/cursor-signal-hook")
+        try expect(first?["hooks"] == nil, "fresh Cursor install should use flat hook scripts")
+    }
+
+    static func cursorHookInstallerFollowsExistingNestedFormat() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cursorDir = tempDir.appendingPathComponent(".cursor", isDirectory: true)
+        try FileManager.default.createDirectory(at: cursorDir, withIntermediateDirectories: true)
+        try hookFixtureJSON(command: "/opt/homebrew/bin/other-hook", events: ["stop"]).data(using: .utf8)!
+            .write(to: cursorDir.appendingPathComponent("hooks.json"))
+
+        _ = try installSignalLightHooks(homeDirectory: tempDir)
+
+        let path = cursorDir.appendingPathComponent("hooks.json")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any]
+        let hooks = object?["hooks"] as? [String: Any]
+        let stopGroups = hooks?["stop"] as? [[String: Any]]
+        let signalLightGroup = stopGroups?.first {
+            guard let handlers = $0["hooks"] as? [[String: Any]] else { return false }
+            return handlers.contains { ($0["command"] as? String) == "/usr/local/bin/cursor-signal-hook" }
+        }
+
+        try expect(signalLightGroup != nil, "existing nested Cursor hooks should stay nested after install")
     }
 
     static func pathMergePreservesUserPathOrderAndDeduplicatesDefaults() throws {
@@ -442,6 +745,20 @@ private enum SignalLightSharedTestSupport {
             .appendingPathComponent("signal-light-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private static func makeFakeCursorApp(version: String) throws -> URL {
+        let appURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("signal-light-tests-cursor-\(UUID().uuidString).app", isDirectory: true)
+        let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+        let plist: [String: Any] = [
+            "CFBundleShortVersionString": version,
+            "CFBundleIdentifier": "com.todesktop.test.cursor",
+        ]
+        let plistData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try plistData.write(to: contentsURL.appendingPathComponent("Info.plist"))
+        return appURL
     }
 
     private static func hookFixtureJSON(command: String, events: [String]) -> String {

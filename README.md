@@ -2,7 +2,7 @@
 
 [![GitHub Pages](https://img.shields.io/badge/website-online-22c949?style=flat-square)](https://qipeijun.github.io/vibecoding-signal-light/)
 [![macOS](https://img.shields.io/badge/macOS-11%2B-111111?style=flat-square&logo=apple)](#安装)
-[![AI Agents](https://img.shields.io/badge/Codex%20%7C%20Claude%20Code-supported-22c949?style=flat-square)](#codex-集成)
+[![AI Agents](https://img.shields.io/badge/Codex%20%7C%20Claude%20Code%20%7C%20Cursor-supported-22c949?style=flat-square)](#codex-集成)
 
 给 Codex、Claude Code 等本地 AI 编程助手一个看得见的 macOS 状态灯。
 
@@ -52,8 +52,8 @@ GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](doc
 - 菜单栏常驻三色灯图标，左键打开设置面板，右键打开快捷菜单。
 - 可拖动的桌面悬浮状态灯，支持置顶、透明度、尺寸和动画速度配置。
 - 单击悬浮状态灯可跳回产生当前状态的 AI 或终端应用，拖动浮层不触发跳转。
-- 支持 Codex、Claude Code hook，把本地 Agent 事件映射为灯语。
-- 安装包会自动写入用户级 Codex / Claude Code hooks，也可用 `signal-light doctor` 检查接线状态。
+- 支持 Codex、Claude Code、Cursor hook，把本地 Agent 事件映射为灯语。
+- 安装包会自动写入用户级 Codex / Claude Code / Cursor hooks，也可用 `signal-light doctor` 检查接线状态。
 - 支持多会话状态：整体状态以最近一次有效 hook 写入为准，避免旧会话长期压住新会话。
 - 支持状态规则自定义，可以为每个已知状态配置颜色和动画模式。
 - 提供配置诊断和修复入口，能检查配置文件、状态目录、写入权限和 Agent hooks 接线。
@@ -110,12 +110,14 @@ GitHub Release 中面向普通用户分发的 pkg 需要 Apple Developer ID 签�
 - `/usr/local/bin/signal-light`
 - `/usr/local/bin/codex-signal-hook`
 - `/usr/local/bin/claude-code-signal-hook`
+- `/usr/local/bin/cursor-signal-hook`
 - `/usr/local/bin/signal-light-uninstall`
 
 安装器会在当前登录用户下尝试写入：
 
 - `~/.codex/hooks.json`
 - `~/.claude/settings.json`
+- `~/.cursor/hooks.json`
 
 Codex 的非托管 hook 首次运行前仍需要在 Codex 的 `/hooks` 面板里确认信任，这是 Codex 自身的安全机制。
 
@@ -162,7 +164,7 @@ signal-light quit
 signal-light doctor
 ```
 
-手动重新写入 Codex / Claude Code hooks：
+手动重新写入 Codex / Claude Code / Cursor hooks：
 
 ```bash
 signal-light install-hooks
@@ -218,6 +220,32 @@ echo '{"event":"Notification","session_id":"demo"}' | claude-code-signal-hook
 | `Stop` | 绿灯常亮 |
 | `StopFailure` | 红灯闪烁 |
 | `SessionEnd` | 绿灯常亮 |
+
+## Cursor 集成
+
+Cursor hook 通常从 stdin 传入 JSON：
+
+```bash
+echo '{"hook_event_name":"stop","conversation_id":"demo"}' | cursor-signal-hook
+echo '{"hook_event_name":"preToolUse","conversation_id":"demo"}' | cursor-signal-hook
+```
+
+常见映射：
+
+| Cursor 事件 | 状态灯表现 |
+| --- | --- |
+| `sessionStart` | 绿灯常亮 |
+| `beforeSubmitPrompt` | 绿灯脉冲 |
+| `preToolUse` | 绿灯脉冲 |
+| `postToolUse` | 绿灯脉冲 |
+| `postToolUseFailure` | 红灯闪烁 |
+| `beforeShellExecution` | 绿灯脉冲 |
+| `afterShellExecution` | 绿灯脉冲 |
+| `subagentStart` | 绿灯脉冲 |
+| `subagentStop` | 绿灯脉冲 |
+| `stop` (status=completed) | 绿灯常亮 |
+| `stop` (status=error/aborted) | 红灯闪烁 |
+| `sessionEnd` | 绿灯常亮 |
 
 ## 配置文件
 

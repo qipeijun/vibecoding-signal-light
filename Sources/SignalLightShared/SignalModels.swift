@@ -268,6 +268,13 @@ public let workingSignals: Set<String> = ["thinking", "working", "tool_done"]
 public let sessionEndSignals: Set<String> = ["session_end", "off"]
 public let turnEndSignals: Set<String> = ["turn_end"]
 
+let signalTTLs: [String: TimeInterval] = [
+    "attention": 300,
+    "thinking": 600,
+    "working": 600,
+    "tool_done": 600,
+]
+
 // MARK: - 动画帧计算
 
 public func frame(for state: SignalState, tick: Int) -> SignalFrame {
@@ -333,6 +340,7 @@ public func aggregateSessions(_ sessions: [String: SessionRecord]) -> String {
 
 public func pruneExpiredSessions(_ sessions: inout [String: SessionRecord], now: Double, sessionTTL: Double) {
     sessions = sessions.filter { _, record in
-        now - record.updatedAt <= sessionTTL
+        let ttl = signalTTLs[record.signal] ?? sessionTTL
+        return now - record.updatedAt <= ttl
     }
 }

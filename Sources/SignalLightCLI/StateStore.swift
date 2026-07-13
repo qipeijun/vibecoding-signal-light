@@ -36,6 +36,10 @@ final class StateStore {
             throw SignalCLIError.message("Unknown signal: \(signal)")
         }
         try writeCurrentStatus(signal)
+        SignalLightStateFiles.appendEventLog(
+            entry: ["ts": Date().timeIntervalSince1970, "signal": signal, "action": "status"],
+            in: stateDir
+        )
     }
 
     func applySessionSignal(
@@ -73,6 +77,26 @@ final class StateStore {
             let aggregate = aggregateSessions(state.sessions)
             try writeJSON(state, to: sessionFile)
             try writeCurrentStatus(aggregate)
+
+            let logAction: String
+            if sessionEndSignals.contains(signalName) {
+                logAction = "session_end"
+            } else if turnEndSignals.contains(signalName) {
+                logAction = "turn_end"
+            } else {
+                logAction = "set"
+            }
+            SignalLightStateFiles.appendEventLog(
+                entry: [
+                    "ts": now,
+                    "session": sessionKey,
+                    "signal": signalName,
+                    "aggregate": aggregate,
+                    "action": logAction,
+                    "model": model as Any,
+                ],
+                in: stateDir
+            )
             return aggregate
         }
     }
@@ -81,6 +105,10 @@ final class StateStore {
         try withLock {
             try SignalLightStateFiles.writeSessionState(SessionState(sessions: [:]), in: stateDir)
         }
+        SignalLightStateFiles.appendEventLog(
+            entry: ["ts": Date().timeIntervalSince1970, "action": "clear_all"],
+            in: stateDir
+        )
     }
 
     func snapshotData() throws -> Data {

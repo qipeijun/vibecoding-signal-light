@@ -3,6 +3,7 @@ import Foundation
 public enum SignalLightPaths {
     public static let codexHookCommand = "/usr/local/bin/codex-signal-hook"
     public static let claudeHookCommand = "/usr/local/bin/claude-code-signal-hook"
+    public static let cursorHookCommand = "/usr/local/bin/cursor-signal-hook"
 
     public static let commonExecutableDirectories = [
         "/usr/local/bin",
