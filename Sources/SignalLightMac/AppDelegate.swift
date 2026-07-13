@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config = configStore.loadOrRepairConfig()
         let agent = configStore.effectiveAgentConfig(from: config)
         stateStore = SignalStateStore(stateDirectory: agent.stateDirectory)
+        applyPresentationPreferences()
 
         // 根据配置设置激活策略
         if !config.display.showDockIcon {
@@ -143,8 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if oldStateDir != newStateDir {
             stateStore = SignalStateStore(stateDirectory: newStateDir)
             startStateDirectoryWatcher()
-            _ = stateStore.refresh()
         }
+        applyPresentationPreferences()
+        _ = stateStore.refresh()
 
         // 重新应用显示配置
         applyDisplayConfig()
@@ -285,12 +287,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let agent = configStore.effectiveAgentConfig(from: config)
         guard let source = SessionSourceActivation.preferredSource(
             in: sessionState.sessions,
-            aggregate: stateStore.state,
+            preferred: agent.preferredAgentSource,
             sessionTTL: agent.sessionTTLSeconds
         ) else {
             return
         }
         SessionSourceActivation.activate(source)
+    }
+
+    private func applyPresentationPreferences() {
+        let agent = configStore.effectiveAgentConfig(from: config)
+        stateStore.setPresentationPreferences(
+            preferredAgentSource: agent.preferredAgentSource,
+            sessionTTL: agent.sessionTTLSeconds
+        )
     }
 
     private func readSessionState() -> SessionState {

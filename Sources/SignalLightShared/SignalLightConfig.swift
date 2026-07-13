@@ -76,17 +76,26 @@ public struct AgentConfig: Codable, Equatable {
     public var sessionTTLSeconds: Double
     /// 登录时启动
     public var launchAtLogin: Bool
+    /// 多 Agent 同时运行时优先展示的来源
+    public var preferredAgentSource: PreferredAgentSource
 
     public static let `default` = AgentConfig(
         stateDirectory: "/private/tmp/signal-light",
         sessionTTLSeconds: 86400,
-        launchAtLogin: true
+        launchAtLogin: true,
+        preferredAgentSource: .auto
     )
 
-    public init(stateDirectory: String, sessionTTLSeconds: Double, launchAtLogin: Bool) {
+    public init(
+        stateDirectory: String,
+        sessionTTLSeconds: Double,
+        launchAtLogin: Bool,
+        preferredAgentSource: PreferredAgentSource = .auto
+    ) {
         self.stateDirectory = stateDirectory
         self.sessionTTLSeconds = sessionTTLSeconds
         self.launchAtLogin = launchAtLogin
+        self.preferredAgentSource = preferredAgentSource
     }
 }
 

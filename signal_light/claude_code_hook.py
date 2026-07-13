@@ -12,24 +12,24 @@ from signal_light.agent_signals import SIGNALS
 
 
 EVENT_TO_SIGNAL = {
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PostToolUseFailure": "blocked",
-    "PostToolBatch": "working",
-    "PermissionDenied": "blocked",
-    "PreCompact": "working",
-    "PostCompact": "tool_done",
-    "SubagentStart": "working",
-    "SubagentStop": "tool_done",
-    "TaskCreated": "working",
-    "TaskCompleted": "tool_done",
-    "Stop": "done",
-    "StopFailure": "blocked",
-    "Notification": "attention",
-    "PermissionRequest": "permission",
-    "SessionEnd": "session_end",
+    "sessionstart": "session_start",
+    "userpromptsubmit": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "posttoolusefailure": "blocked",
+    "posttoolbatch": "working",
+    "permissiondenied": "blocked",
+    "precompact": "working",
+    "postcompact": "tool_done",
+    "subagentstart": "working",
+    "subagentstop": "tool_done",
+    "taskcreated": "working",
+    "taskcompleted": "tool_done",
+    "stop": "done",
+    "stopfailure": "blocked",
+    "notification": "attention",
+    "permissionrequest": "permission",
+    "sessionend": "session_end",
 }
 
 STOP_REASON_SIGNAL = {
@@ -83,12 +83,13 @@ def choose_signal(hook_input: ClaudeCodeHookInput) -> str:
     if isinstance(explicit, str) and explicit.strip().lower() in SIGNALS:
         return explicit.strip().lower()
 
-    if hook_input.event_name == "Stop":
+    event_key = hook_input.event_name.strip().lower()
+    if event_key == "stop":
         stop_reason = hook_input.payload.get("stop_reason")
         if isinstance(stop_reason, str) and stop_reason in STOP_REASON_SIGNAL:
             return STOP_REASON_SIGNAL[stop_reason]
 
-    return EVENT_TO_SIGNAL.get(hook_input.event_name, "attention")
+    return EVENT_TO_SIGNAL.get(event_key, "attention")
 
 
 def session_key(hook_input: ClaudeCodeHookInput, environ: Mapping[str, str]) -> str:

@@ -2,34 +2,59 @@ import Foundation
 import SignalLightShared
 
 private let codexEventToSignal: [String: String] = [
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PermissionRequest": "permission",
-    "Stop": "done",
-    "SessionEnd": "session_end",
+    "sessionstart": "session_start",
+    "userpromptsubmit": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "permissionrequest": "permission",
+    "stop": "done",
+    "sessionend": "session_end",
 ]
 
 private let claudeEventToSignal: [String: String] = [
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PostToolUseFailure": "blocked",
-    "PostToolBatch": "working",
-    "PermissionDenied": "blocked",
-    "PreCompact": "working",
-    "PostCompact": "tool_done",
-    "SubagentStart": "working",
-    "SubagentStop": "tool_done",
-    "TaskCreated": "working",
-    "TaskCompleted": "tool_done",
-    "Stop": "done",
-    "StopFailure": "blocked",
-    "Notification": "attention",
-    "PermissionRequest": "permission",
-    "SessionEnd": "session_end",
+    "sessionstart": "session_start",
+    "userpromptsubmit": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "posttoolusefailure": "blocked",
+    "posttoolbatch": "working",
+    "permissiondenied": "blocked",
+    "precompact": "working",
+    "postcompact": "tool_done",
+    "subagentstart": "working",
+    "subagentstop": "tool_done",
+    "taskcreated": "working",
+    "taskcompleted": "tool_done",
+    "stop": "done",
+    "stopfailure": "blocked",
+    "notification": "attention",
+    "permissionrequest": "permission",
+    "sessionend": "session_end",
+]
+
+private let cursorEventToSignal: [String: String] = [
+    "sessionstart": "session_start",
+    "beforesubmitprompt": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "posttoolusefailure": "blocked",
+    "subagentstart": "working",
+    "subagentstop": "tool_done",
+    "beforeshellexecution": "working",
+    "aftershellexecution": "tool_done",
+    "beforemcpexecution": "working",
+    "aftermcpexecution": "tool_done",
+    "beforereadfile": "working",
+    "afterfileedit": "tool_done",
+    "precompact": "working",
+    "afteragentresponse": "tool_done",
+    "afteragentthought": "tool_done",
+    "beforetabfileread": "working",
+    "aftertabfileedit": "tool_done",
+    "workspaceopen": "idle",
+    "stop": "done",
+    "sessionend": "session_end",
+    "permissionrequest": "permission",
 ]
 
 private let failureSignals: [String: String] = [
@@ -66,6 +91,26 @@ func readPayload(stdinText: String) -> [String: Any] {
     return payload
 }
 
+private func normalizedEventName(_ eventName: String) -> String {
+    eventName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+}
+
+func resolvedCodexEventSignal(eventName: String) -> String? {
+    let key = normalizedEventName(eventName)
+    guard !key.isEmpty else {
+        return nil
+    }
+    return codexEventToSignal[key]
+}
+
+func resolvedCursorEventSignal(eventName: String) -> String? {
+    let key = normalizedEventName(eventName)
+    guard !key.isEmpty else {
+        return nil
+    }
+    return cursorEventToSignal[key]
+}
+
 func chooseCodexSignal(eventName: String, payload: [String: Any]) -> String {
     if let explicit = firstString(payload, keys: ["signal", "signal_name", "lamp_signal"])?.lowercased(),
        validSignals.contains(explicit) {
@@ -85,7 +130,7 @@ func chooseCodexSignal(eventName: String, payload: [String: Any]) -> String {
         return "blocked"
     }
 
-    return codexEventToSignal[eventName] ?? codexEventToSignal[eventName.trimmingCharacters(in: .whitespacesAndNewlines)] ?? "attention"
+    return resolvedCodexEventSignal(eventName: eventName) ?? "attention"
 }
 
 func chooseClaudeSignal(eventName: String, payload: [String: Any]) -> String {
@@ -94,13 +139,14 @@ func chooseClaudeSignal(eventName: String, payload: [String: Any]) -> String {
         return explicit
     }
 
-    if eventName == "Stop",
+    let eventKey = normalizedEventName(eventName)
+    if eventKey == "stop",
        let stopReason = payload["stop_reason"] as? String,
        ["max_tokens", "error"].contains(stopReason) {
         return "blocked"
     }
 
-    return claudeEventToSignal[eventName] ?? "attention"
+    return claudeEventToSignal[eventKey] ?? "attention"
 }
 
 func codexSessionKey(payload: [String: Any], environment: [String: String]) -> String {
@@ -143,6 +189,59 @@ func claudeSessionKey(payload: [String: Any], environment: [String: String]) -> 
 
     if let cwd = payload["cwd"] as? String, !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return "cwd:\(cwd.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+    return "global"
+}
+
+func chooseCursorSignal(eventName: String, payload: [String: Any]) -> String {
+    if let explicit = firstString(payload, keys: ["signal", "signal_name", "lamp_signal"])?.lowercased(),
+       validSignals.contains(explicit) {
+        return explicit
+    }
+
+    let eventKey = normalizedEventName(eventName)
+    if eventKey == "stop",
+       let status = payload["status"] as? String,
+       ["error", "aborted"].contains(status) {
+        return "blocked"
+    }
+
+    if let status = firstString(payload, keys: ["status", "state"])?.lowercased() {
+        if validSignals.contains(status) {
+            return status
+        }
+        if let failureSignal = failureSignals[status] {
+            return failureSignal
+        }
+    }
+
+    if hasStructuredFailure(payload) {
+        return "blocked"
+    }
+
+    return resolvedCursorEventSignal(eventName: eventName) ?? "attention"
+}
+
+func cursorSessionKey(payload: [String: Any], environment: [String: String]) -> String {
+    if let conversationId = payload["conversation_id"] as? String,
+       !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    for key in ["CURSOR_SESSION_ID", "CURSOR_CONVERSATION_ID"] {
+        if let value = environment[key], !value.isEmpty {
+            return value
+        }
+    }
+
+    if let workspaceRoots = payload["workspace_roots"] as? [String],
+       let firstRoot = workspaceRoots.first,
+       !firstRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return firstRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    if let cwd = firstString(payload, keys: ["cwd", "workspace", "workspace_dir", "project_dir"]) {
+        return "cwd:\(cwd)"
     }
     return "global"
 }

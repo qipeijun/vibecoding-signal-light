@@ -234,13 +234,15 @@ private struct RawAgentConfig: Decodable {
     let stateDirectory: String?
     let sessionTTLSeconds: Double?
     let launchAtLogin: Bool?
+    let preferredAgentSource: PreferredAgentSource?
 
     func mergedWithDefaults() -> AgentConfig {
         let defaults = AgentConfig.default
         return AgentConfig(
             stateDirectory: stateDirectory ?? defaults.stateDirectory,
             sessionTTLSeconds: sessionTTLSeconds ?? defaults.sessionTTLSeconds,
-            launchAtLogin: launchAtLogin ?? defaults.launchAtLogin
+            launchAtLogin: launchAtLogin ?? defaults.launchAtLogin,
+            preferredAgentSource: preferredAgentSource ?? defaults.preferredAgentSource
         )
     }
 }

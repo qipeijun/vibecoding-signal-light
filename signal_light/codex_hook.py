@@ -12,13 +12,13 @@ from signal_light.agent_signals import SIGNALS
 
 
 EVENT_TO_SIGNAL = {
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PermissionRequest": "permission",
-    "Stop": "done",
-    "SessionEnd": "session_end",
+    "sessionstart": "session_start",
+    "userpromptsubmit": "thinking",
+    "pretooluse": "working",
+    "posttooluse": "tool_done",
+    "permissionrequest": "permission",
+    "stop": "done",
+    "sessionend": "session_end",
 }
 
 FAILURE_SIGNALS = {
@@ -91,7 +91,18 @@ def choose_signal(hook_input: CodexHookInput) -> str:
     if failure_marker:
         return FAILURE_SIGNALS[failure_marker]
 
-    return EVENT_TO_SIGNAL.get(hook_input.event_name, EVENT_TO_SIGNAL.get(hook_input.event_name.strip(), "attention"))
+    return _signal_for_event(hook_input.event_name) or "attention"
+
+
+def _normalized_event_name(event_name: str) -> str:
+    return event_name.strip().lower()
+
+
+def _signal_for_event(event_name: str) -> str | None:
+    key = _normalized_event_name(event_name)
+    if not key:
+        return None
+    return EVENT_TO_SIGNAL.get(key)
 
 
 def session_key(hook_input: CodexHookInput, environ: Mapping[str, str]) -> str:

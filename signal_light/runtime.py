@@ -52,6 +52,8 @@ STATE_DIR = Path(_agent_config["state_dir"])
 SESSION_FILE = STATE_DIR / "sessions.json"
 CURRENT_STATUS_FILE = STATE_DIR / "current_status.json"
 LOCK_FILE = STATE_DIR / "state.lock"
+_EVENT_LOG_FILE = STATE_DIR / "events_python.log"
+EVENT_LOG_MAX_BYTES = 5 * 1024 * 1024
 SESSION_TTL_SECONDS = _agent_config["session_ttl"]
 STATUS_CHANGED_NOTIFICATION = b"com.vibecoding.signal-light.status-changed"
 
@@ -60,6 +62,15 @@ YELLOW_SIGNALS = {"attention"}
 WORKING_SIGNALS = {"thinking", "working", "tool_done"}
 SESSION_END_SIGNALS = {"session_end", "off"}
 TURN_END_SIGNALS = {"turn_end"}
+
+# 信号分级 TTL（秒）。不在表中的信号使用 SESSION_TTL_SECONDS（默认 24h）。
+# 瞬态信号短 TTL：agent 停止活动后自动降级，避免 Cursor 退出/崩溃后灯永远亮。
+SIGNAL_TTL: dict[str, float] = {
+    "attention": 300,       # 5 分钟 — 需要关注，不应长期等待
+    "thinking": 600,        # 10 分钟 — agent 持续发 hook，停了就是死了
+    "working": 600,         # 10 分钟
+    "tool_done": 600,       # 10 分钟
+}
 
 
 class SignalLightError(RuntimeError):
@@ -110,6 +121,22 @@ def apply_session_signal(
 
         aggregate = aggregate_sessions(sessions)
         _write_session_state(state)
+
+        if signal_name in SESSION_END_SIGNALS:
+            _log_action = "session_end"
+        elif signal_name in TURN_END_SIGNALS:
+            _log_action = "turn_end"
+        else:
+            _log_action = "set"
+        _append_event_log({
+            "ts": now,
+            "session": session_key,
+            "signal": signal_name,
+            "aggregate": aggregate,
+            "action": _log_action,
+            "model": model_name or None,
+        })
+
         apply_signal(SIGNALS[aggregate], speed=speed)
         return aggregate
 
@@ -118,6 +145,7 @@ def clear_session_state() -> None:
     """Clear all tracked Codex session states."""
     with _state_lock():
         _write_session_state({"sessions": {}})
+    _append_event_log({"ts": time.time(), "action": "clear_all"})
 
 
 def write_current_status(signal_name: str, *, updated_at: float | None = None) -> None:
@@ -132,6 +160,7 @@ def write_current_status(signal_name: str, *, updated_at: float | None = None) -
     }
     _atomic_write_json(CURRENT_STATUS_FILE, payload)
     _post_status_changed_notification()
+    _append_event_log({"ts": time.time(), "signal": signal_name, "action": "status"})
 
 
 def aggregate_sessions(sessions: dict[str, object]) -> str:
@@ -215,6 +244,27 @@ def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
         raise SignalLightError(f"Failed to write signal-light state {path}: {exc}") from exc
 
 
+def _append_event_log(entry: dict[str, object]) -> None:
+    """Append one JSONL entry to events.log with flock-protected size rotation."""
+    try:
+        import fcntl
+
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with _EVENT_LOG_FILE.open("a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                if _EVENT_LOG_FILE.stat().st_size > EVENT_LOG_MAX_BYTES:
+                    lines = _EVENT_LOG_FILE.read_text().splitlines()
+                    keep = lines[len(lines) // 2 :]
+                    _EVENT_LOG_FILE.write_text("\n".join(keep) + "\n" if keep else "")
+                    f.seek(0, 2)
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
 def _post_status_changed_notification() -> None:
     if sys.platform != "darwin":
         return
@@ -254,7 +304,12 @@ def _prune_sessions(sessions: dict[str, object], now: float) -> None:
             expired.append(session_key)
             continue
         updated_at = value.get("updated_at")
-        if not isinstance(updated_at, (int, float)) or now - updated_at > SESSION_TTL_SECONDS:
+        if not isinstance(updated_at, (int, float)):
+            expired.append(session_key)
+            continue
+        signal_name = value.get("signal")
+        ttl = SIGNAL_TTL.get(signal_name, SESSION_TTL_SECONDS) if isinstance(signal_name, str) else SESSION_TTL_SECONDS
+        if now - updated_at > ttl:
             expired.append(session_key)
 
     for session_key in expired:

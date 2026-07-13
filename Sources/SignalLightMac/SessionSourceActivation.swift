@@ -5,17 +5,17 @@ import SignalLightShared
 enum SessionSourceActivation {
     static func preferredSource(
         in sessions: [String: SessionRecord],
-        aggregate: SignalState,
+        preferred: PreferredAgentSource,
         sessionTTL: Double,
         now: Double = Date().timeIntervalSince1970
     ) -> SessionSource? {
-        let candidates = sessions.values.filter { record in
-            record.source != nil
-                && !sessionEndSignals.contains(record.signal)
-                && now - record.updatedAt <= sessionTTL
-        }
-
-        return candidates.max { $0.updatedAt < $1.updatedAt }?.source
+        preferredSessionRecord(
+            in: sessions,
+            preferred: preferred,
+            now: now,
+            sessionTTL: sessionTTL,
+            excludingEndSignals: true
+        )?.source
     }
 
     static func activate(_ source: SessionSource) {
