@@ -1,678 +1,703 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Vibecoding Signal Light - macOS AI Agent 状态灯</title>
-    <meta
-      name="description"
-      content="Vibecoding Signal Light 是 macOS 原生 AI Agent 状态灯，把 Codex、Claude Code 的思考中、工作中、等待授权和完成状态显示在菜单栏与桌面悬浮窗。"
-    />
-    <meta
-      name="keywords"
-      content="Vibecoding Signal Light,AI 状态灯,macOS 状态灯,Codex hook,Claude Code hook,AI Agent monitor,AI coding assistant,菜单栏工具,悬浮窗"
-    />
-    <meta name="author" content="qipeijun" />
-    <meta name="robots" content="index,follow" />
-    <meta name="theme-color" content="#22c949" />
-    <meta name="application-name" content="Vibecoding Signal Light" />
-    <meta name="apple-mobile-web-app-title" content="Signal Light" />
-    <link rel="canonical" href="https://qipeijun.github.io/vibecoding-signal-light/" />
-    <meta property="og:site_name" content="Vibecoding Signal Light" />
-    <meta property="og:title" content="Vibecoding Signal Light - macOS AI Agent 状态灯" />
-    <meta property="og:description" content="把 Codex、Claude Code 等 AI Agent 的工作状态放进菜单栏和悬浮窗，等待授权、正在工作、已经完成一眼看懂。" />
-    <meta property="og:url" content="https://qipeijun.github.io/vibecoding-signal-light/" />
-    <meta property="og:image" content="https://qipeijun.github.io/vibecoding-signal-light/images/screenshot-floating-light.png" />
-    <meta property="og:image:width" content="1040" />
-    <meta property="og:image:height" content="640" />
-    <meta property="og:image:alt" content="Vibecoding Signal Light 的 macOS 悬浮状态灯和设置界面" />
-    <meta property="og:locale" content="zh_CN" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Vibecoding Signal Light - macOS AI Agent 状态灯" />
-    <meta name="twitter:description" content="Codex、Claude Code、本地自动化任务的菜单栏状态灯和桌面悬浮窗。" />
-    <meta name="twitter:image" content="https://qipeijun.github.io/vibecoding-signal-light/images/screenshot-floating-light.png" />
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Vibecoding Signal Light",
-        "alternateName": "AI 状态灯",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS 11+",
-        "description": "macOS 原生 AI Agent 状态灯，把 Codex、Claude Code 等本地编程助手的实时状态显示在菜单栏和桌面悬浮窗。",
-        "url": "https://qipeijun.github.io/vibecoding-signal-light/",
-        "downloadUrl": "https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg",
-        "codeRepository": "https://github.com/qipeijun/vibecoding-signal-light",
-        "image": "https://qipeijun.github.io/vibecoding-signal-light/images/screenshot-floating-light.png",
-        "author": {
-          "@type": "Person",
-          "name": "qipeijun"
-        },
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        }
-      }
-    </script>
-    <style>
-      :root {
-        color-scheme: light;
-        --ink: #101815;
-        --muted: #5f6f69;
-        --soft: #eff7f3;
-        --panel: #ffffff;
-        --line: #dce7e1;
-        --accent: #22c949;
-        --accent-dark: #168a36;
-        --shadow: 0 24px 70px rgba(24, 42, 34, 0.14);
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html {
-        scroll-behavior: smooth;
-      }
-
-      body {
-        margin: 0;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-          "PingFang SC", "Helvetica Neue", Arial, sans-serif;
-        background: #f8fbf9;
-        color: var(--ink);
-      }
-
-      a {
-        color: inherit;
-        text-decoration: none;
-      }
-
-      img {
-        display: block;
-        max-width: 100%;
-      }
-
-      .nav {
-        position: sticky;
-        top: 0;
-        z-index: 20;
-        border-bottom: 1px solid rgba(16, 24, 21, 0.08);
-        background: rgba(248, 251, 249, 0.88);
-        backdrop-filter: blur(18px);
-      }
-
-      .nav-inner {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        width: min(1120px, calc(100% - 40px));
-        min-height: 64px;
-        margin: 0 auto;
-      }
-
-      .brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        font-weight: 800;
-        letter-spacing: 0;
-      }
-
-      .brand-mark {
-        display: grid;
-        place-items: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 9px;
-        background: #202422;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-      }
-
-      .brand-dot {
-        width: 14px;
-        height: 14px;
-        border-radius: 999px;
-        background: var(--accent);
-        box-shadow: 0 0 0 4px rgba(34, 201, 73, 0.18);
-      }
-
-      .nav-links {
-        display: flex;
-        align-items: center;
-        gap: 22px;
-        color: var(--muted);
-        font-size: 14px;
-        font-weight: 650;
-      }
-
-      .nav-links a:hover {
-        color: var(--ink);
-      }
-
-      .button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 46px;
-        padding: 0 20px;
-        border-radius: 999px;
-        border: 1px solid transparent;
-        font-weight: 800;
-        white-space: nowrap;
-      }
-
-      .button-primary {
-        background: var(--ink);
-        color: #fff;
-        box-shadow: 0 14px 34px rgba(16, 24, 21, 0.18);
-      }
-
-      .button-primary:hover {
-        background: #25302b;
-      }
-
-      .button-secondary {
-        border-color: var(--line);
-        background: rgba(255, 255, 255, 0.8);
-        color: var(--ink);
-      }
-
-      .button-secondary:hover {
-        border-color: #b8cac0;
-      }
-
-      .hero {
-        display: grid;
-        grid-template-columns: minmax(0, 0.92fr) minmax(360px, 0.9fr);
-        gap: 56px;
-        align-items: center;
-        width: min(1120px, calc(100% - 40px));
-        min-height: calc(100vh - 64px);
-        margin: 0 auto;
-        padding: 64px 0 42px;
-      }
-
-      .eyebrow {
-        margin: 0 0 18px;
-        color: var(--accent-dark);
-        font-size: 14px;
-        font-weight: 850;
-      }
-
-      h1 {
-        margin: 0;
-        font-size: clamp(48px, 8vw, 86px);
-        line-height: 1.02;
-        letter-spacing: 0;
-      }
-
-      .lead {
-        max-width: 620px;
-        margin: 24px 0 0;
-        color: var(--muted);
-        font-size: 22px;
-        line-height: 1.6;
-        font-weight: 560;
-      }
-
-      .hero-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px;
-        margin-top: 34px;
-      }
-
-      .download-note {
-        margin-top: 14px;
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.6;
-      }
-
-      .hero-visual {
-        position: relative;
-      }
-
-      .hero-visual img {
-        width: 100%;
-        border-radius: 34px;
-        box-shadow: var(--shadow);
-      }
-
-      .status-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 22px;
-        padding: 12px 16px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: #fff;
-        color: var(--muted);
-        font-weight: 700;
-      }
-
-      .pulse {
-        width: 11px;
-        height: 11px;
-        border-radius: 999px;
-        background: var(--accent);
-        box-shadow: 0 0 0 8px rgba(34, 201, 73, 0.14);
-      }
-
-      .section {
-        width: min(1120px, calc(100% - 40px));
-        margin: 0 auto;
-        padding: 84px 0;
-      }
-
-      .section-header {
-        display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 24px;
-        margin-bottom: 28px;
-      }
-
-      .section h2 {
-        max-width: 680px;
-        margin: 0;
-        font-size: clamp(34px, 5vw, 56px);
-        line-height: 1.08;
-        letter-spacing: 0;
-      }
-
-      .section-copy {
-        max-width: 520px;
-        margin: 14px 0 0;
-        color: var(--muted);
-        font-size: 18px;
-        line-height: 1.7;
-        font-weight: 560;
-      }
-
-      .feature-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 16px;
-      }
-
-      .feature-card {
-        min-height: 190px;
-        padding: 24px;
-        border: 1px solid var(--line);
-        border-radius: 26px;
-        background: var(--panel);
-        box-shadow: 0 16px 42px rgba(24, 42, 34, 0.08);
-      }
-
-      .feature-card strong {
-        display: block;
-        margin-bottom: 10px;
-        font-size: 20px;
-      }
-
-      .feature-card p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 15px;
-        line-height: 1.65;
-      }
-
-      .showcase {
-        display: grid;
-        grid-template-columns: 0.86fr 1.14fr;
-        gap: 34px;
-        align-items: center;
-        padding: 34px;
-        border: 1px solid var(--line);
-        border-radius: 34px;
-        background: #fff;
-        box-shadow: var(--shadow);
-      }
-
-      .showcase:nth-child(even) {
-        grid-template-columns: 1.14fr 0.86fr;
-      }
-
-      .showcase + .showcase {
-        margin-top: 24px;
-      }
-
-      .showcase img {
-        width: 100%;
-        border-radius: 26px;
-        background: var(--soft);
-      }
-
-      .showcase-text {
-        padding: 16px;
-      }
-
-      .showcase-text h3 {
-        margin: 0;
-        font-size: clamp(28px, 4vw, 42px);
-        line-height: 1.1;
-      }
-
-      .showcase-text p {
-        margin: 16px 0 0;
-        color: var(--muted);
-        font-size: 18px;
-        line-height: 1.7;
-        font-weight: 560;
-      }
-
-      .tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 22px;
-      }
-
-      .tag {
-        padding: 8px 12px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: var(--soft);
-        color: #31413b;
-        font-size: 13px;
-        font-weight: 760;
-      }
-
-      .download {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 28px;
-        align-items: center;
-        padding: 34px;
-        border-radius: 34px;
-        background: var(--ink);
-        color: #fff;
-      }
-
-      .download h2 {
-        color: #fff;
-      }
-
-      .download .section-copy {
-        color: rgba(255, 255, 255, 0.72);
-      }
-
-      .download-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .download .button-primary {
-        background: #fff;
-        color: var(--ink);
-      }
-
-      .download .button-secondary {
-        border-color: rgba(255, 255, 255, 0.22);
-        background: rgba(255, 255, 255, 0.08);
-        color: #fff;
-      }
-
-      .terminal {
-        overflow: hidden;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.08);
-      }
-
-      .terminal pre {
-        margin: 0;
-        padding: 18px;
-        color: rgba(255, 255, 255, 0.84);
-        font: 14px/1.7 "SF Mono", Menlo, Consolas, monospace;
-        white-space: pre-wrap;
-      }
-
-      footer {
-        width: min(1120px, calc(100% - 40px));
-        margin: 0 auto;
-        padding: 34px 0 46px;
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.7;
-      }
-
-      footer a {
-        color: var(--ink);
-        font-weight: 760;
-      }
-
-      @media (max-width: 880px) {
-        .nav-links a:not(.button) {
-          display: none;
-        }
-
-        .hero,
-        .showcase,
-        .showcase:nth-child(even),
-        .download {
-          grid-template-columns: 1fr;
-        }
-
-        .hero {
-          min-height: auto;
-          padding-top: 48px;
-        }
-
-        .feature-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .section {
-          padding: 58px 0;
-        }
-
-        .section-header {
-          display: block;
-        }
-      }
-
-      @media (max-width: 560px) {
-        .nav-inner,
-        .hero,
-        .section,
-        footer {
-          width: min(100% - 28px, 1120px);
-        }
-
-        .nav-inner {
-          min-height: 58px;
-        }
-
-        .brand span:last-child {
-          display: none;
-        }
-
-        .hero-actions,
-        .download-actions {
-          width: 100%;
-        }
-
-        .button {
-          width: 100%;
-        }
-
-        .showcase,
-        .download {
-          padding: 18px;
-          border-radius: 24px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <nav class="nav">
-      <div class="nav-inner">
-        <a class="brand" href="#top" aria-label="Vibecoding Signal Light 首页">
-          <span class="brand-mark"><span class="brand-dot"></span></span>
-          <span>Vibecoding Signal Light</span>
-        </a>
-        <div class="nav-links">
-          <a href="#features">功能</a>
-          <a href="#screens">界面</a>
-          <a href="#download" class="button button-primary">下载</a>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Light — Codex 状态灯</title>
+<meta name="description" content="用三盏灯看懂 Codex 在做什么。macOS 原生，多会话自动聚合。">
+<meta name="theme-color" content="#0A0A0C">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================
+   变量
+   ============================================ */
+:root {
+  --bg:        #0A0A0C;
+  --surface:   #121218;
+  --border:    #1E1E2A;
+  --border-hi: #2A2A3A;
+  --text:      #EDEDF0;
+  --text-2:    #9898A0;
+  --text-3:    #545460;
+  --green:     #34C759;
+  --yellow:    #FFCC00;
+  --red:       #FF3B30;
+  --font:      "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
+  --mono:      "JetBrains Mono", "SF Mono", "Fira Code", "Consolas", monospace;
+  --ease:      cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; -webkit-font-smoothing:antialiased; }
+body { font-family:var(--font); background:var(--bg); color:var(--text); line-height:1.6; overflow-x:hidden; }
+a { color:inherit; text-decoration:none; }
+button { font:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+
+/* ============================================
+   导航
+   ============================================ */
+.nav { position:fixed; top:0; left:0; right:0; z-index:100; padding:0 32px; height:56px; display:flex; align-items:center; justify-content:space-between;
+  backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%); background:rgba(10,10,12,0.72); }
+.nav-l { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; letter-spacing:-0.01em; }
+.nav-dots { display:flex; gap:5px; }
+.nav-dots i { width:7px; height:7px; border-radius:50%; display:block; }
+.nav-dots i:nth-child(1) { background:var(--green); box-shadow:0 0 5px rgba(52,199,89,0.5); }
+.nav-dots i:nth-child(2) { background:var(--yellow); box-shadow:0 0 5px rgba(255,204,0,0.5); }
+.nav-dots i:nth-child(3) { background:var(--red); box-shadow:0 0 5px rgba(255,59,48,0.5); }
+.nav-r { display:flex; gap:8px; align-items:center; }
+.nav-r a { font-size:13px; color:var(--text-2); padding:6px 14px; border-radius:6px; transition:all 0.2s; }
+.nav-r a:hover { color:var(--text); background:rgba(255,255,255,0.04); }
+.nav-cta { background:var(--green) !important; color:#000 !important; font-weight:600 !important; }
+.nav-cta:hover { opacity:0.9; }
+
+/* ============================================
+   Hero
+   ============================================ */
+.hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:100px 32px 120px; position:relative; }
+.hero-bg { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+.hero-bg::after { content:""; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:700px; height:700px; border-radius:50%; transition:background 0.8s var(--ease);
+  background:radial-gradient(circle, rgba(52,199,89,0.10) 0%, rgba(52,199,89,0.02) 45%, transparent 70%); }
+.hero-bg.red::after { background:radial-gradient(circle, rgba(255,59,48,0.12) 0%, rgba(255,59,48,0.02) 45%, transparent 70%); }
+.hero-bg.yellow::after { background:radial-gradient(circle, rgba(255,204,0,0.12) 0%, rgba(255,204,0,0.02) 45%, transparent 70%); }
+
+/* ============================================
+   信号灯 — 深色面板
+   ============================================ */
+.signal { position:relative; z-index:2; margin-bottom:48px; }
+
+.signal-shadow { position:absolute; top:16px; left:50%; transform:translateX(-50%);
+  width:110px; height:calc(100% - 32px); border-radius:28px;
+  background:rgba(0,0,0,0.60); filter:blur(32px); }
+
+/* 外壳 — 深色金属面板 */
+.enclosure { position:relative; width:156px; height:384px; border-radius:24px;
+  background:
+    linear-gradient(175deg,
+      rgba(48,48,54,0.92) 0%,
+      rgba(34,34,40,0.94) 25%,
+      rgba(28,28,34,0.95) 55%,
+      rgba(24,24,30,0.96) 100%);
+  /* 表面微纹理 — 极细微水平渐变模拟拉丝 */
+  background-size:100% 100%;
+  box-shadow:
+    /* 外投影 */
+    0 24px 64px rgba(0,0,0,0.55),
+    0 4px 12px rgba(0,0,0,0.30),
+    /* 面板边缘 — 上/左微提亮，下/右微加深，模拟倒角 */
+    0 0 0 1px rgba(255,255,255,0.06),
+    /* 内边框 — 面板内缘微光 */
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 -1px 0 rgba(0,0,0,0.30);
+  transition:box-shadow 0.4s var(--ease), background 0.4s var(--ease); }
+
+.enclosure:hover {
+  box-shadow:
+    0 32px 80px rgba(0,0,0,0.60),
+    0 6px 16px rgba(0,0,0,0.35),
+    0 0 0 1px rgba(255,255,255,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -1px 0 rgba(0,0,0,0.30);
+}
+
+/* 面板顶部微弱环境光反射 */
+.enclosure::before { content:""; position:absolute; top:2px; left:8px; right:8px; height:18%;
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 60%, transparent 100%);
+  z-index:10; pointer-events:none; }
+
+/* 面板底部微弱反光 */
+.enclosure::after { content:""; position:absolute; bottom:2px; left:8px; right:8px; height:6%;
+  border-radius:16px;
+  background:linear-gradient(0deg, rgba(255,255,255,0.02) 0%, transparent 100%);
+  z-index:10; pointer-events:none; }
+
+/* 灯组 */
+.lamps { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:64px; z-index:2; }
+
+/* 单灯容器 */
+.lamp { position:relative; width:48px; height:48px; }
+
+/* 灯杯 — 精密凹槽 */
+.cup { position:absolute; inset:-6px; border-radius:50%;
+  /* 凹槽内壁 — 比面板更深，从顶部暗灰过渡到底部微亮 */
+  background:radial-gradient(ellipse at 50% 35%,
+    rgba(18,18,22,0.9) 0%,
+    rgba(24,24,30,0.85) 60%,
+    rgba(32,32,38,0.8) 100%);
+  /* 凹槽内阴影 — 顶部深阴影模拟光线被遮挡 */
+  box-shadow:
+    inset 0 4px 8px rgba(0,0,0,0.50),
+    inset 0 1px 2px rgba(0,0,0,0.30),
+    inset 0 -1px 2px rgba(255,255,255,0.04);
+  z-index:1; }
+
+/* 灯杯金属镶边 — 精密加工的细环 */
+.cup::after { content:""; position:absolute; inset:1px; border-radius:50%;
+  border:1.5px solid rgba(255,255,255,0.07);
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.04),
+    0 1px 1px rgba(0,0,0,0.20); }
+
+/* 辉光层 — 外层大范围柔光 */
+.glow-o { position:absolute; inset:-20px; border-radius:50%; opacity:0; z-index:2; pointer-events:none; transition:opacity 0.3s;
+  filter:blur(10px); }
+.green  .glow-o { background:radial-gradient(circle, rgba(52,199,89,0.50) 0%, rgba(52,199,89,0.12) 45%, transparent 70%); }
+.yellow .glow-o { background:radial-gradient(circle, rgba(255,204,0,0.50) 0%, rgba(255,204,0,0.12) 45%, transparent 70%); }
+.red    .glow-o { background:radial-gradient(circle, rgba(255,59,48,0.50) 0%, rgba(255,59,48,0.12) 45%, transparent 70%); }
+.on .glow-o { opacity:1; }
+
+/* 辉光层 — 中层 */
+.glow-m { position:absolute; inset:-8px; border-radius:50%; opacity:0; z-index:3; pointer-events:none; transition:opacity 0.25s;
+  filter:blur(5px); }
+.green  .glow-m { background:rgba(52,199,89,0.70); }
+.yellow .glow-m { background:rgba(255,204,0,0.70); }
+.red    .glow-m { background:rgba(255,59,48,0.70); }
+.on .glow-m { opacity:0.85; }
+
+/* 灯泡主体 */
+.bulb { position:absolute; inset:1px; border-radius:50%; z-index:4; transition:opacity 0.06s; }
+.green  .bulb-on { background:radial-gradient(ellipse at 32% 28%,
+    rgba(100,240,130,1) 0%,
+    rgba(52,199,89,0.85) 35%,
+    rgba(38,165,65,0.55) 65%,
+    rgba(24,120,40,0.25) 100%); }
+.yellow .bulb-on { background:radial-gradient(ellipse at 32% 28%,
+    rgba(255,232,70,1) 0%,
+    rgba(255,204,0,0.85) 35%,
+    rgba(210,165,0,0.55) 65%,
+    rgba(160,120,0,0.25) 100%); }
+.red    .bulb-on { background:radial-gradient(ellipse at 32% 28%,
+    rgba(255,110,95,1) 0%,
+    rgba(255,59,48,0.85) 35%,
+    rgba(210,40,30,0.55) 65%,
+    rgba(150,20,12,0.25) 100%); }
+
+/* 关闭态灯泡 — 深色凹面 */
+.bulb-off { position:absolute; inset:1px; border-radius:50%; z-index:4;
+  background:radial-gradient(ellipse at 50% 40%,
+    rgba(35,35,42,0.8) 0%,
+    rgba(16,16,20,0.9) 60%,
+    rgba(8,8,10,0.95) 100%);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.4); }
+
+/* 球面高光 */
+.spec { position:absolute; top:17%; left:34%; width:15%; height:9%; border-radius:50%;
+  background:rgba(255,255,255,0.50); z-index:5; opacity:0; transition:opacity 0.2s;
+  filter:blur(0.3px); }
+.on .spec { opacity:1; }
+
+/* ============================================
+   Hero 文字
+   ============================================ */
+.hero-tag { position:relative; z-index:2; display:inline-flex; align-items:center; gap:8px;
+  padding:5px 14px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid var(--border);
+  font-size:13px; color:var(--text-2); margin-bottom:24px; transition:all 0.3s; }
+.hero-tag-dot { width:7px; height:7px; border-radius:50%; transition:background 0.3s, box-shadow 0.3s; }
+.hero-title { position:relative; z-index:2; font-size:clamp(36px, 5.5vw, 52px); font-weight:700;
+  letter-spacing:-0.025em; line-height:1.1; text-align:center; max-width:540px; }
+.hero-title em { font-style:normal; color:var(--green); transition:color 0.5s; }
+.hero-sub { position:relative; z-index:2; font-size:17px; color:var(--text-2); text-align:center;
+  margin-top:16px; max-width:460px; line-height:1.55; }
+.hero-cta { position:relative; z-index:2; margin-top:36px; display:flex; gap:16px; flex-wrap:wrap; justify-content:center; }
+
+.btn { display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:10px;
+  font-size:15px; font-weight:600; transition:all 0.2s var(--ease); }
+.btn-green { background:var(--green); color:#000; }
+.btn-green:hover { opacity:0.88; transform:translateY(-1px); }
+.btn-ghost { background:rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--text); }
+.btn-ghost:hover { background:rgba(255,255,255,0.08); border-color:var(--border-hi); transform:translateY(-1px); }
+
+/* ============================================
+   灯语网格
+   ============================================ */
+.strip { padding:80px 32px; border-top:1px solid var(--border); }
+.strip-inner { max-width:1100px; margin:0 auto; }
+.strip-header { margin-bottom:48px; }
+.strip-header h2 { font-size:28px; font-weight:600; letter-spacing:-0.02em; margin-bottom:8px; }
+.strip-header p { color:var(--text-2); font-size:15px; max-width:460px; }
+
+.lamp-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; }
+
+.lamp-cell { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:20px; display:flex; flex-direction:column; align-items:center; gap:12px;
+  transition:border-color 0.3s, transform 0.3s var(--ease); cursor:default; }
+.lamp-cell:hover { border-color:var(--border-hi); transform:translateY(-2px); }
+
+.cell-lamp { position:relative; width:52px; height:104px; flex-shrink:0; }
+.cell-body { position:absolute; inset:0; border-radius:10px;
+  background:linear-gradient(175deg,
+    rgba(48,48,54,0.92) 0%,
+    rgba(28,28,34,0.95) 55%,
+    rgba(24,24,30,0.96) 100%);
+  box-shadow:
+    0 8px 24px rgba(0,0,0,0.35),
+    0 0 0 1px rgba(255,255,255,0.05),
+    inset 0 1px 0 rgba(255,255,255,0.03); }
+.cell-body::before { content:""; position:absolute; top:1px; left:3px; right:3px; height:14%;
+  border-radius:6px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.04), transparent); z-index:2; }
+
+.cell-cup { position:absolute; left:50%; transform:translateX(-50%); width:18px; height:18px; border-radius:50%;
+  background:radial-gradient(ellipse at 50% 35%,
+    rgba(18,18,22,0.9) 0%,
+    rgba(24,24,30,0.85) 60%,
+    rgba(32,32,38,0.8) 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,0.45),
+    inset 0 0.5px 1px rgba(0,0,0,0.25); z-index:3; }
+.cell-cup::after { content:""; position:absolute; inset:0.5px; border-radius:50%;
+  border:1px solid rgba(255,255,255,0.06); }
+.cell-cup:nth-child(2) { top:12px; }   /* top lamp */
+.cell-cup:nth-child(3) { top:42px; }   /* mid */
+.cell-cup:nth-child(4) { top:72px; }   /* bot */
+
+.cell-bulb { position:absolute; left:50%; transform:translate(-50%,-50%); width:13px; height:13px;
+  border-radius:50%; z-index:4; transition:opacity 0.06s; will-change:opacity; }
+.cell-glow { position:absolute; left:50%; transform:translate(-50%,-50%); width:28px; height:28px;
+  border-radius:50%; z-index:3; pointer-events:none; opacity:0; transition:opacity 0.06s; filter:blur(5px); will-change:opacity; }
+
+.cell-info { text-align:center; }
+.cell-info .ci-name { font-size:14px; font-weight:600; margin-bottom:2px; }
+.cell-info .ci-effect { font-size:12px; color:var(--text-2); margin-bottom:2px; }
+.cell-info .ci-action { font-size:12px; font-weight:500; }
+.cell-info .ci-desc { font-size:11px; color:var(--text-3); margin-top:4px; line-height:1.5; }
+
+@media (max-width:900px) { .lamp-grid { grid-template-columns:repeat(3, 1fr); } }
+@media (max-width:640px) { .lamp-grid { grid-template-columns:repeat(2, 1fr); } }
+@media (max-width:420px) { .lamp-grid { grid-template-columns:1fr; } }
+
+/* ============================================
+   详情区
+   ============================================ */
+.detail { padding:80px 32px; border-top:1px solid var(--border); }
+.detail-inner { max-width:900px; margin:0 auto; }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:48px 64px; }
+.detail-item h3 { font-size:18px; font-weight:600; margin-bottom:8px; letter-spacing:-0.01em; }
+.detail-item h3 b { font-weight:700; }
+.detail-item p { font-size:14px; color:var(--text-2); line-height:1.65; }
+
+.agg-bar { grid-column:1/-1; margin-top:8px; padding:20px 24px; border-radius:12px;
+  background:var(--surface); border:1px solid var(--border); }
+.agg-bar-label { font-size:12px; font-weight:600; color:var(--text-3); letter-spacing:0.06em; margin-bottom:12px; }
+.agg-bar-flow { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-family:var(--mono); font-size:12px; }
+.agg-t { padding:4px 10px; border-radius:4px; font-weight:500; }
+.agg-t.blocked    { background:rgba(255,59,48,0.14);  color:var(--red); }
+.agg-t.permission { background:rgba(255,59,48,0.10);  color:var(--red); }
+.agg-t.attention  { background:rgba(255,204,0,0.12);  color:var(--yellow); }
+.agg-t.stale      { background:rgba(255,204,0,0.08);  color:var(--yellow); }
+.agg-t.working    { background:rgba(52,199,89,0.10);  color:var(--green); }
+.agg-t.done       { background:rgba(52,199,89,0.06);  color:var(--green); }
+.agg-t.idle       { background:rgba(255,255,255,0.03); color:var(--text-3); }
+.agg-arr { color:var(--text-3); font-size:11px; }
+
+/* ============================================
+   安装区
+   ============================================ */
+.install { padding:80px 32px; border-top:1px solid var(--border); }
+.install-inner { max-width:700px; margin:0 auto; }
+.install-inner h2 { font-size:28px; font-weight:600; letter-spacing:-0.02em; margin-bottom:32px; }
+.cmds { display:flex; flex-direction:column; gap:12px; }
+.cmd { position:relative; padding:18px 20px; border-radius:10px; background:var(--surface); border:1px solid var(--border);
+  font-family:var(--mono); font-size:13px; line-height:1.8; overflow-x:auto; }
+.cmd .pr { color:var(--green); user-select:none; }
+.cmd .co { color:var(--text-3); }
+.cmd .cp { position:absolute; top:10px; right:12px; padding:4px 10px; border-radius:5px;
+  background:rgba(255,255,255,0.04); color:var(--text-2); font-size:11px; font-family:var(--font);
+  transition:all 0.2s; }
+.cmd .cp:hover { background:rgba(255,255,255,0.10); color:var(--text); }
+.cmd .cp.done { color:var(--green); }
+.install-cta { text-align:center; margin-top:32px; }
+
+/* ============================================
+   Footer
+   ============================================ */
+.footer { padding:48px 32px; border-top:1px solid var(--border); text-align:center; }
+.footer p { font-size:13px; color:var(--text-3); }
+.footer a { color:var(--text-2); transition:color 0.2s; }
+.footer a:hover { color:var(--text); }
+
+/* ============================================
+   减少动效
+   ============================================ */
+@media (prefers-reduced-motion:reduce) {
+  .bulb-on, .bulb-off, .cell-bulb, .cell-glow { animation:none !important; transition:none !important; }
+  .on .bulb-on { opacity:1 !important; }
+  .on .bulb-off { opacity:0 !important; }
+  .lamp-cell:hover, .btn-green:hover, .btn-ghost:hover { transform:none; }
+}
+
+/* ============================================
+   响应式
+   ============================================ */
+@media (max-width:768px) {
+  .nav { padding:0 20px; }
+  .enclosure { width:120px; height:296px; border-radius:22px; }
+  .enclosure::before, .enclosure::after { border-radius:16px; }
+  .lamps { gap:48px; }
+  .lamp { width:36px; height:36px; }
+  .cup { inset:-4.5px; }
+  .glow-o { inset:-15px; }
+  .glow-m { inset:-6px; }
+  .hero { padding:80px 20px 100px; }
+  .detail-grid { grid-template-columns:1fr; gap:32px; }
+}
+
+@media (max-width:480px) {
+  .enclosure { width:100px; height:246px; border-radius:18px; }
+  .enclosure::before, .enclosure::after { border-radius:13px; }
+  .lamps { gap:38px; }
+  .lamp { width:30px; height:30px; }
+  .cup { inset:-4px; }
+  .glow-o { inset:-13px; }
+  .glow-m { inset:-5px; }
+  .agg-bar-flow { font-size:11px; gap:4px; }
+}
+</style>
+</head>
+<body>
+
+<!-- 导航 -->
+<nav class="nav">
+  <div class="nav-l">
+    <span class="nav-dots"><i></i><i></i><i></i></span>
+    Signal Light
+  </div>
+  <div class="nav-r">
+    <a href="https://github.com/qipeijun/vibecoding-signal-light" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest" class="nav-cta" target="_blank" rel="noopener">下载</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-bg" id="heroBg"></div>
+
+  <div class="signal">
+    <div class="signal-shadow"></div>
+    <div class="enclosure">
+      <div class="lamps">
+        <!-- 绿灯 -->
+        <div class="lamp green on" data-color="green" id="l0">
+          <div class="cup"></div>
+          <div class="glow-o"></div><div class="glow-m"></div>
+          <div class="bulb bulb-on" style="opacity:0"></div>
+          <div class="bulb bulb-off" style="opacity:1"></div>
+          <div class="spec"></div>
+        </div>
+        <!-- 黄灯 -->
+        <div class="lamp yellow on" data-color="yellow" id="l1">
+          <div class="cup"></div>
+          <div class="glow-o"></div><div class="glow-m"></div>
+          <div class="bulb bulb-on" style="opacity:0"></div>
+          <div class="bulb bulb-off" style="opacity:1"></div>
+          <div class="spec"></div>
+        </div>
+        <!-- 红灯 -->
+        <div class="lamp red on" data-color="red" id="l2">
+          <div class="cup"></div>
+          <div class="glow-o"></div><div class="glow-m"></div>
+          <div class="bulb bulb-on" style="opacity:0"></div>
+          <div class="bulb bulb-off" style="opacity:1"></div>
+          <div class="spec"></div>
         </div>
       </div>
-    </nav>
+    </div>
+  </div>
 
-    <main id="top">
-      <section class="hero">
-        <div>
-          <p class="eyebrow">macOS native status light for AI agents</p>
-          <h1>Vibecoding Signal Light</h1>
-          <p class="lead">
-            把 AI Agent 的思考中、工作中、等待授权和已经完成状态放进 macOS 菜单栏与桌面悬浮窗。适合 Codex、Claude Code 和长时间运行的本地自动化任务。
-          </p>
-          <div class="hero-actions">
-            <a
-              class="button button-primary"
-              href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg"
-            >
-              下载 macOS 安装包
-            </a>
-            <a class="button button-secondary" href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest">
-              查看最新版本
-            </a>
-          </div>
-          <p class="download-note">支持 macOS 11+。安装包由 GitHub Actions 自动构建并发布。</p>
-          <div class="status-pill"><span class="pulse"></span> 当前状态：空闲</div>
+  <div class="hero-tag" id="heroTag">
+    <span class="hero-tag-dot" id="heroDot" style="background:var(--green);box-shadow:0 0 6px rgba(52,199,89,0.5)"></span>
+    <span id="heroState">工作中</span>
+  </div>
+
+  <h1 class="hero-title">Codex 的<em id="heroEm">三盏状态灯</em></h1>
+  <p class="hero-sub">绿、黄、红三色灯语，一眼判断 Agent 是否需要你。</p>
+
+  <div class="hero-cta">
+    <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest" class="btn btn-green" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v15M5 12l7 7 7-7"/></svg>
+      下载 macOS 版
+    </a>
+    <a href="#lamps" class="btn btn-ghost">灯语手册</a>
+  </div>
+</section>
+
+<!-- 灯语 -->
+<section class="strip" id="lamps">
+  <div class="strip-inner">
+    <div class="strip-header">
+      <h2>12 种灯语</h2>
+      <p>颜色由风险语义锁定，只允许调整动画节奏。</p>
+    </div>
+    <div class="lamp-grid" id="lampGrid"></div>
+  </div>
+</section>
+
+<!-- 详情 -->
+<section class="detail">
+  <div class="detail-inner">
+    <div class="detail-grid">
+      <div class="detail-item">
+        <h3>多会话 <b style="color:var(--red)">风险</b> 聚合</h3>
+        <p>多个 Codex 会话同时运行时按优先级自动聚合。阻塞和授权永远优先显示，不会被新的工作事件覆盖。同级取最近状态。</p>
+      </div>
+      <div class="detail-item">
+        <h3>Codex <b style="color:var(--yellow)">Hook</b> 集成</h3>
+        <p>安装包自动写入用户级 Codex hooks。UserPromptSubmit → 绿灯脉冲，PermissionRequest → 红灯慢呼吸，Stop → 绿灯双闪后归位。</p>
+      </div>
+      <div class="detail-item">
+        <h3>macOS <b style="color:var(--green)">原生</b> 渲染</h3>
+        <p>纯 AppKit 绘制：菜单栏横向三灯图标、桌面磨砂玻璃悬浮窗、Touch Bar 视图。不依赖网页窗口，<code style="font-family:var(--mono);font-size:12px;background:rgba(255,255,255,0.04);padding:1px 5px;border-radius:3px">signal-light</code> CLI 编译为原生二进制。</p>
+      </div>
+      <div class="detail-item">
+        <h3>分级 <b style="color:var(--text-2)">租约</b> 与历史</h3>
+        <p>分级租约自动过期（工作 30min / 关注 2h / 关键 24h / 完成 6s）。超时无心跳的状态标记为失联。本地保留 24h/200 条最小状态历史，不记录提示词。</p>
+      </div>
+      <div class="agg-bar">
+        <div class="agg-bar-label">多会话聚合规则</div>
+        <div class="agg-bar-flow">
+          <span class="agg-t blocked">已阻塞</span><span class="agg-arr">></span>
+          <span class="agg-t permission">等待授权</span><span class="agg-arr">></span>
+          <span class="agg-t attention">等待关注</span><span class="agg-arr">=</span>
+          <span class="agg-t stale">状态失联</span><span class="agg-arr">></span>
+          <span class="agg-t working">工作中</span><span class="agg-arr">></span>
+          <span class="agg-t done">已完成</span><span class="agg-arr">></span>
+          <span class="agg-t idle">空闲</span>
         </div>
-        <div class="hero-visual">
-          <img src="assets/01_cover.png" alt="AI 状态灯主视觉和设置面板预览" />
-        </div>
-      </section>
+      </div>
+    </div>
+  </div>
+</section>
 
-      <section id="features" class="section">
-        <div class="section-header">
-          <div>
-            <h2>不打断工作流，只在需要时提醒</h2>
-            <p class="section-copy">
-              状态灯常驻菜单栏和桌面悬浮窗。你可以继续写代码、看文档或离开屏幕，等 Agent 需要权限或结果需要确认时再回来处理。
-            </p>
-          </div>
-        </div>
-        <div class="feature-grid">
-          <article class="feature-card">
-            <strong>菜单栏与悬浮窗</strong>
-            <p>小尺寸、低打扰，支持置顶显示。工作中保持绿色脉冲，需要关注时切换黄灯或红灯。</p>
-          </article>
-          <article class="feature-card">
-            <strong>11 种状态规则</strong>
-            <p>为空闲、思考中、工作中、授权、阻塞、完成等状态单独配置灯色和动画方式。</p>
-          </article>
-          <article class="feature-card">
-            <strong>面向技术工作流</strong>
-            <p>支持 Codex、Claude Code hook，也适合内部工具、Agent 状态监控和自动化脚本运行提示。</p>
-          </article>
-        </div>
-      </section>
+<!-- 安装 -->
+<section class="install">
+  <div class="install-inner">
+    <h2>安装</h2>
+    <div class="cmds">
+      <div class="cmd">
+        <span class="pr">$ </span>brew install --cask signal-light
+        <button class="cp" onclick="copy(this,'brew install --cask signal-light')">复制</button>
+      </div>
+      <div class="cmd">
+        <span class="pr">$ </span>open "/Applications/Signal Light.app"<br>
+        <span class="pr">$ </span>signal-light list<span class="co">  # 列出所有灯语</span><br>
+        <span class="pr">$ </span>signal-light play working<span class="co">  # 预览工作状态</span><br>
+        <span class="pr">$ </span>signal-light doctor<span class="co">  # 诊断接线状态</span>
+        <button class="cp" onclick="copy(this,'signal-light list\nsignal-light play working\nsignal-light doctor')">复制</button>
+      </div>
+    </div>
+    <div class="install-cta">
+      <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest" class="btn btn-green" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v15M5 12l7 7 7-7"/></svg>
+        下载最新版
+      </a>
+    </div>
+  </div>
+</section>
 
-      <section id="screens" class="section">
-        <article class="showcase">
-          <img src="assets/04_widget.png" alt="菜单栏状态灯和悬浮窗预览" />
-          <div class="showcase-text">
-            <h3>小而清晰的悬浮状态灯</h3>
-            <p>常亮、脉冲、熄灭，用最直观的方式展示当前任务状态。状态灯可以置顶，也可以随时隐藏。</p>
-            <div class="tag-list">
-              <span class="tag">菜单栏</span>
-              <span class="tag">悬浮窗</span>
-              <span class="tag">低打扰</span>
-            </div>
-          </div>
-        </article>
+<!-- Footer -->
+<footer class="footer">
+  <p>Signal Light · <a href="https://github.com/qipeijun/vibecoding-signal-light" target="_blank" rel="noopener">GitHub</a> · MIT · 基于 <a href="https://github.com/starlight36/vibecoding-signal-light" target="_blank" rel="noopener">starlight36/vibecoding-signal-light</a></p>
+</footer>
 
-        <article class="showcase">
-          <div class="showcase-text">
-            <h3>显示效果可调</h3>
-            <p>窗口大小、透明度、动画速度都可以按你的桌面习惯调整，同时支持 Dock 图标和 Touch Bar 显示。</p>
-            <div class="tag-list">
-              <span class="tag">窗口大小</span>
-              <span class="tag">透明度</span>
-              <span class="tag">动画速度</span>
-            </div>
-          </div>
-          <img src="assets/03_display.png" alt="显示效果设置面板" />
-        </article>
+<script>
+/* ============ 数据 ============ */
+const SIGNALS = [
+  { n:"空闲",       e:"绿灯常亮", a:"不用处理",       c:"green",  m:"steady",       d:"Agent 空闲，没有正在运行的会话。" },
+  { n:"会话开始",   e:"绿灯常亮", a:"不用处理",       c:"green",  m:"steady",       d:"Codex 会话刚刚建立。" },
+  { n:"会话结束",   e:"绿灯常亮", a:"不用处理",       c:"green",  m:"steady",       d:"会话结束，回到空闲状态。" },
+  { n:"思考中",     e:"绿灯脉冲", a:"不用处理",       c:"green",  m:"workPulse",    d:"Agent 收到任务，正在思考分析。" },
+  { n:"工作中",     e:"绿灯脉冲", a:"不用处理",       c:"green",  m:"workPulse",    d:"正在执行工具、读写文件、跑测试或输出内容。" },
+  { n:"工具完成",   e:"绿灯脉冲", a:"不用处理",       c:"green",  m:"workPulse",    d:"一次工具调用完成，Agent 仍处于工作流中。" },
+  { n:"已完成",     e:"绿灯双闪", a:"不用处理",       c:"green",  m:"doubleFlash",  d:"任务已完成，短暂展示后回到空闲。" },
+  { n:"等待关注",   e:"黄灯闪烁", a:"看一眼",         c:"yellow", m:"flash",        d:"Agent 停下来等你查看结果或继续回复。" },
+  { n:"状态失联",   e:"黄灯慢呼吸", a:"检查 Hook",    c:"yellow", m:"slowPulse",    d:"最近状态超过租约，真实运行状态无法确认。" },
+  { n:"等待授权",   e:"红灯慢呼吸", a:"立即关注",     c:"red",    m:"slowPulse",    d:"Agent 请求授权或需要你明确批准才能继续。" },
+  { n:"已阻塞",     e:"红灯双闪", a:"立即处理",       c:"red",    m:"doubleFlash",  d:"遇到阻塞、失败或无法继续，需要你处理。" },
+  { n:"已关闭",     e:"全灭",     a:"不用处理",       c:"off",    m:"off",          d:"用户主动关闭全部灯光显示。" },
+];
 
-        <article class="showcase">
-          <img src="assets/02_rules.png" alt="状态规则设置面板" />
-          <div class="showcase-text">
-            <h3>状态规则开箱即用，也能逐项恢复</h3>
-            <p>默认规则覆盖日常状态、工作流程、需要关注和会话事件。你可以自定义颜色和闪烁方式，也可以随时恢复默认。</p>
-            <div class="tag-list">
-              <span class="tag">空闲</span>
-              <span class="tag">思考中</span>
-              <span class="tag">工作中</span>
-              <span class="tag">关闭</span>
-            </div>
-          </div>
-        </article>
+const DEMOS = [
+  { state:"工作中",   color:"green",  mode:"workPulse",   dur:3500 },
+  { state:"等待关注", color:"yellow", mode:"flash",       dur:3500 },
+  { state:"等待授权", color:"red",    mode:"slowPulse",   dur:4500 },
+  { state:"已阻塞",   color:"red",    mode:"doubleFlash", dur:3500 },
+  { state:"已完成",   color:"green",  mode:"doubleFlash", dur:3500 },
+];
 
-        <article class="showcase">
-          <div class="showcase-text">
-            <h3>为技术型工作流设计</h3>
-            <p>把开机启动、始终置顶、状态规则和 Agent hook 放在一起，适合长时间跑 Codex、内部工具或自动化脚本。</p>
-            <div class="tag-list">
-              <span class="tag">Codex</span>
-              <span class="tag">Claude Code</span>
-              <span class="tag">Automation</span>
-            </div>
-          </div>
-          <img src="assets/05_workflow.png" alt="技术型工作流宣传图" />
-        </article>
-      </section>
+const SL = [0.18,0.28,0.42,0.62,0.82,1,0.82,0.62,0.42,0.28];
+const TICK = 180;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-      <section id="download" class="section">
-        <div class="download">
-          <div>
-            <p class="eyebrow">Download</p>
-            <h2>下载 macOS 安装包</h2>
-            <p class="section-copy">
-              Release 由 GitHub Actions 在 macOS runner 上构建。打 tag 会自动生成安装包和 SHA256 校验文件；手动运行 workflow 也会上传构建产物。
-            </p>
-            <div class="terminal" aria-label="安装命令示例">
-              <pre>open "/Applications/Signal Light.app"
-signal-light play working
-signal-light play permission</pre>
-            </div>
-          </div>
-          <div class="download-actions">
-            <a
-              class="button button-primary"
-              href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg"
-            >
-              下载最新安装包
-            </a>
-            <a class="button button-secondary" href="https://github.com/qipeijun/vibecoding-signal-light/releases">
-              所有版本
-            </a>
-            <a class="button button-secondary" href="https://github.com/qipeijun/vibecoding-signal-light">
-              GitHub 仓库
-            </a>
-          </div>
-        </div>
-      </section>
-    </main>
+function pm(n,d) { return ((n%d)+d)%d; }
+function cb(mode,tick) {
+  // 与 macOS App 一致：减少动态效果时保留颜色语义，所有动态模式改为常亮。
+  if(reducedMotion.matches) return mode==="off"?0:1;
+  switch(mode) {
+    case "off":return 0; case "steady":return 1;
+    case "flash":return tick%2===0?1:0;
+    case "workPulse":return tick%8<5?1:0;
+    case "slowPulse":return SL[pm(tick,10)];
+    case "doubleFlash":return (pm(tick,8)===0||pm(tick,8)===2)?1:0;
+    default:return 0;
+  }
+}
 
-    <footer>
-      <p>
-        基于开源项目
-        <a href="https://github.com/starlight36/vibecoding-signal-light">starlight36/vibecoding-signal-light</a>
-        二次开发。感谢原项目提供的灵感和基础方向。
-      </p>
-      <p>当前安装包未声明 Developer ID 公证时，macOS 可能需要在“隐私与安全性”里手动允许打开。</p>
-    </footer>
-  </body>
+/* ============ Hero 灯光 ============ */
+const lamps = [document.getElementById("l0"),document.getElementById("l1"),document.getElementById("l2")];
+const heroBg = document.getElementById("heroBg");
+const heroDot = document.getElementById("heroDot");
+const heroState = document.getElementById("heroState");
+const heroEm = document.getElementById("heroEm");
+let demoI=0, timeLeft=DEMOS[0].dur, heroTick=0, tick=0;
+
+function setLamp(el, color, b) {
+  const on = b>0.01;
+  el.className = `lamp ${color}${on?" on":""}`;
+  const bon=el.querySelector(".bulb-on"), boff=el.querySelector(".bulb-off");
+  bon.style.opacity = String(on?b:0);
+  boff.style.opacity = on?"0":"1";
+  const v = 0.18+b*0.82;
+  el.style.setProperty("--v",String(v));
+  // glow 透明度跟随 brightness
+  const go=el.querySelector(".glow-o"), gm=el.querySelector(".glow-m");
+  go.style.opacity = on?String(0.12*v+0.88*b):"0";
+  gm.style.opacity = on?String(0.22*v+0.78*b):"0";
+}
+
+function applyDemo(d) {
+  heroBg.className = "hero-bg " + d.color;
+  heroDot.style.background = d.color==="green"?"var(--green)":d.color==="yellow"?"var(--yellow)":"var(--red)";
+  heroDot.style.boxShadow = "0 0 6px "+(d.color==="green"?"rgba(52,199,89,0.5)":d.color==="yellow"?"rgba(255,204,0,0.5)":"rgba(255,59,48,0.5)");
+  heroState.textContent = d.state;
+  heroEm.style.color = d.color==="green"?"var(--green)":d.color==="yellow"?"var(--yellow)":"var(--red)";
+  lamps.forEach(l=>{
+    const c=l.getAttribute("data-color");
+    l.setAttribute("data-mode", c===d.color?d.mode:"off");
+  });
+  heroTick=0;
+}
+
+applyDemo(DEMOS[0]);
+
+/* ============ 灯语网格 ============ */
+const lampGrid = document.getElementById("lampGrid");
+
+/* ============ 灯语网格动画 ============ */
+const cellEls = [];
+const cellObserver = "IntersectionObserver" in window
+  ? new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        const item = cellEls.find(candidate => candidate.cell === entry.target);
+        if(item) item.visible = entry.isIntersecting;
+      });
+    }, { rootMargin:"80px" })
+  : null;
+
+function cellBulbGradient(color) {
+  const g = {
+    green:  "radial-gradient(ellipse at 32% 28%, rgba(100,240,130,1) 0%, rgba(52,199,89,0.85) 35%, rgba(38,165,65,0.55) 65%, rgba(24,120,40,0.25) 100%)",
+    yellow: "radial-gradient(ellipse at 32% 28%, rgba(255,232,70,1) 0%, rgba(255,204,0,0.85) 35%, rgba(210,165,0,0.55) 65%, rgba(160,120,0,0.25) 100%)",
+    red:    "radial-gradient(ellipse at 32% 28%, rgba(255,110,95,1) 0%, rgba(255,59,48,0.85) 35%, rgba(210,40,30,0.55) 65%, rgba(150,20,12,0.25) 100%)",
+  };
+  return g[color] || g.green;
+}
+function offGrad() { return "radial-gradient(ellipse at 50% 40%, rgba(35,35,42,0.8) 0%, rgba(16,16,20,0.9) 60%, rgba(8,8,10,0.95) 100%)"; }
+function lpIdx(c) { return c==="green"?0:c==="yellow"?1:2; }
+
+SIGNALS.forEach((s, idx) => {
+  const mc = s.c==="off"?"green":s.c;
+  const pi = lpIdx(mc);
+  const cell = document.createElement("div");
+  cell.className = "lamp-cell";
+  cell.dataset.signalIdx = String(idx);
+
+  const top = pi*30+21;
+  const isOff = s.m === "off";
+  cell.innerHTML =
+    '<div class="cell-lamp">'+
+      '<div class="cell-body"></div>'+
+      '<div class="cell-cup"></div><div class="cell-cup"></div><div class="cell-cup"></div>'+
+      '<div class="cell-bulb" style="top:'+top+'px;'+(isOff
+        ?'background:'+offGrad()+';opacity:1;box-shadow:inset 0 1px 2px rgba(0,0,0,0.4)'
+        :'background:'+cellBulbGradient(mc)+';opacity:0.12')+'"></div>'+
+      '<div class="cell-glow" style="top:'+top+'px;background:'+
+        (mc==="green"?"rgba(52,199,89,0.55)":mc==="yellow"?"rgba(255,204,0,0.55)":"rgba(255,59,48,0.55)")+'"></div>'+
+    '</div>'+
+    '<div class="cell-info">'+
+      '<div class="ci-name">'+s.n+'</div>'+
+      '<div class="ci-effect">'+s.e+'</div>'+
+      '<div class="ci-action" style="color:'+(mc==="green"?"var(--green)":mc==="yellow"?"var(--yellow)":"var(--red)")+'">'+s.a+'</div>'+
+      '<div class="ci-desc">'+s.d+'</div>'+
+    '</div>';
+
+  // 非活跃灯杯降低不透明度
+  const cups = cell.querySelectorAll(".cell-cup");
+  cups.forEach((c, i) => {
+    if (s.c==="off") { c.style.opacity="0.35"; return; }
+    if (i!==pi) c.style.opacity="0.30";
+  });
+
+  const bulb = cell.querySelector(".cell-bulb");
+  const glow = cell.querySelector(".cell-glow");
+  cellEls.push({ cell, bulb, glow, mode:s.m, off:isOff, visible:true });
+  cellObserver?.observe(cell);
+
+  lampGrid.appendChild(cell);
+});
+
+function renderTick() {
+  lamps.forEach(l=>{
+    const mode=l.getAttribute("data-mode");
+    setLamp(l, l.getAttribute("data-color"), cb(mode,heroTick));
+  });
+
+  cellEls.forEach(item=>{
+    if(item.off||!item.visible) return;
+    const brightness=cb(item.mode,tick);
+    // 灭灯帧不保留彩色余光，底层灯杯自然呈现关闭态。
+    item.bulb.style.opacity=String(brightness);
+    item.glow.style.opacity=String(brightness*0.83);
+  });
+}
+
+// Hero 与灯语网格共享同一时钟，避免相同灯语出现节奏偏移。
+let lastT=performance.now(), tickElapsed=TICK;
+function loop(now) {
+  if(document.hidden){ lastT=now; requestAnimationFrame(loop); return; }
+  const dt=now-lastT;
+  lastT=now;
+  timeLeft-=dt;
+  if(timeLeft<=0){
+    demoI=(demoI+1)%DEMOS.length;
+    const d=DEMOS[demoI];
+    timeLeft=d.dur;
+    applyDemo(d);
+  }
+
+  tickElapsed+=dt;
+  if(tickElapsed>=TICK){
+    const elapsedTicks=Math.floor(tickElapsed/TICK);
+    tick+=elapsedTicks;
+    heroTick+=elapsedTicks;
+    tickElapsed%=TICK;
+    renderTick();
+  }
+  requestAnimationFrame(loop);
+}
+renderTick();
+requestAnimationFrame(loop);
+
+/* ============ 复制 ============ */
+function copy(btn,text) {
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.textContent="已复制"; btn.classList.add("done");
+    setTimeout(()=>{ btn.textContent="复制"; btn.classList.remove("done"); },1500);
+  });
+}
+</script>
+
+</body>
 </html>
