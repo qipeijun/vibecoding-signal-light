@@ -37,11 +37,27 @@ jobs:
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
-          if [[ -z "${MACOS_CERTIFICATE_P12_BASE64}" ]]; then
-            echo "未配置 MACOS_CERTIFICATE_P12_BASE64，跳过 Developer ID 签名。"
-            exit 0
-          fi
+          required_values=(
+            "$MACOS_CERTIFICATE_P12_BASE64"
+            "$MACOS_CERTIFICATE_PASSWORD"
+            "$DEVELOPER_ID_APPLICATION"
+            "$DEVELOPER_ID_INSTALLER"
+            "$APPLE_ID"
+            "$APPLE_TEAM_ID"
+            "$APPLE_APP_SPECIFIC_PASSWORD"
+          )
+          for value in "${required_values[@]}"; do
+            if [[ -z "$value" ]]; then
+              echo "::error::正式 Release 缺少 Developer ID 签名或 Apple 公证凭据。"
+              exit 1
+            fi
+          done
           KEYCHAIN_PATH="$RUNNER_TEMP/signal-light-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
           CERTIFICATE_PATH="$RUNNER_TEMP/signal-light-certificate.p12"
@@ -91,6 +107,9 @@ jobs:
       - name: Python 测试
         run: PYTHONPATH=. uv run pytest
 
+      - name: 安装升级卸载 E2E
+        run: tests/e2e/installer-lifecycle.sh .build/debug/signal-light-cli
+
       - name: 构建安装包
         run: ./scripts/build-installer
         env:
@@ -100,7 +119,16 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SIGNAL_LIGHT_REQUIRE_SIGNING: "1"
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
+      - name: 验证签名与公证
+        run: |
+          scripts/verify-installer dist/Signal-Light-Installer.pkg
+          codesign --verify --deep --strict --verbose=2 "dist/build/Signal Light.app"
+          pkgutil --check-signature dist/Signal-Light-Installer.pkg
+          xcrun stapler validate dist/Signal-Light-Installer.pkg
+          spctl --assess --verbose=2 --type install dist/Signal-Light-Installer.pkg
 
       - name: 生成校验文件
         run: |

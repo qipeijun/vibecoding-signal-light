@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PKG_PATH="${1:-$ROOT_DIR/dist/Signal-Light-Installer.pkg}"
+PAYLOAD="$(pkgutil --payload-files "$PKG_PATH")"
+
+required_paths=(
+  "./Applications/Signal Light.app/Contents/MacOS/signal-light-mac"
+  "./Applications/Signal Light.app/Contents/Resources/bin/signal-light"
+  "./Applications/Signal Light.app/Contents/Resources/bin/codex-signal-hook"
+  "./usr/local/bin/signal-light"
+  "./usr/local/bin/codex-signal-hook"
+  "./usr/local/bin/signal-light-uninstall"
+)
+
+for path in "${required_paths[@]}"; do
+  if ! grep -Fqx "$path" <<< "$PAYLOAD"; then
+    echo "安装包缺少必须文件: $path" >&2
+    exit 1
+  fi
+done
+
+if grep -Fq "claude-code-signal-hook" <<< "$PAYLOAD"; then
+  echo "安装包不应包含 Claude Hook 入口。" >&2
+  exit 1
+fi
+
+echo "installer payload verified"

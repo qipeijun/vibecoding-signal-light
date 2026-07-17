@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_ROOT="${SIGNAL_LIGHT_INSTALL_ROOT:-}"
+CLI_PATH="$INSTALL_ROOT/usr/local/bin/signal-light"
+APP_PATH="$INSTALL_ROOT/Applications/Signal Light.app"
+TEST_MODE="${SIGNAL_LIGHT_INSTALL_TEST_MODE:-0}"
+
+console_user="${SIGNAL_LIGHT_CONSOLE_USER:-$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || true)}"
+user_home="${SIGNAL_LIGHT_USER_HOME:-}"
+if [[ -z "$user_home" && -n "$console_user" && "$console_user" != "root" && "$console_user" != "loginwindow" ]]; then
+  user_home="$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}' || true)"
+fi
+
+run_for_console_user() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    HOME="$user_home" CFFIXED_USER_HOME="$user_home" "$@"
+  else
+    /usr/bin/sudo -u "$console_user" HOME="$user_home" "$@"
+  fi
+}
+
+if [[ -n "$console_user" && "$console_user" != "root" && "$console_user" != "loginwindow" && -n "$user_home" && -d "$user_home" ]]; then
+  result_dir="$user_home/Library/Application Support/Signal Light"
+  result_file="$result_dir/hook-install-result.txt"
+  run_for_console_user /bin/mkdir -p "$result_dir"
+
+  migration_result="迁移完成"
+  if ! run_for_console_user "$CLI_PATH" migrate-codex-only --home "$user_home"; then
+    migration_result="旧版 Hook 迁移失败"
+  fi
+
+  if run_for_console_user "$CLI_PATH" install-hooks --quiet --home "$user_home"; then
+    result_message="${migration_result}；Codex Hook 已配置，等待首次事件或 /hooks 信任确认。"
+  else
+    result_message="${migration_result}；Codex Hook 写入失败，请打开 Signal Light 诊断。"
+  fi
+  run_for_console_user /bin/sh -c 'printf "%s\n" "$1" > "$2"' sh "$result_message" "$result_file"
+fi
+
+"$CLI_PATH" cleanup-legacy-command --path "$INSTALL_ROOT/usr/local/bin/claude-code-signal-hook" || true
+
+if [[ "$TEST_MODE" != "1" && -n "$console_user" && "$console_user" != "root" && "$console_user" != "loginwindow" ]]; then
+  /usr/bin/sudo -u "$console_user" /usr/bin/open "$APP_PATH" || true
+fi
+
+exit 0

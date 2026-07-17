@@ -5,6 +5,23 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COPYFILE_DISABLE=1
 VERSION="${SIGNAL_LIGHT_VERSION:-1.0.6.2}"
 INSTALLER_SIGN_IDENTITY="${SIGNAL_LIGHT_INSTALLER_SIGN_IDENTITY:-}"
+REQUIRE_SIGNING="${SIGNAL_LIGHT_REQUIRE_SIGNING:-0}"
+
+if [[ "$REQUIRE_SIGNING" == "1" ]]; then
+  required_values=(
+    "${SIGNAL_LIGHT_CODESIGN_IDENTITY:-}"
+    "$INSTALLER_SIGN_IDENTITY"
+    "${APPLE_ID:-}"
+    "${APPLE_TEAM_ID:-}"
+    "${APPLE_APP_SPECIFIC_PASSWORD:-}"
+  )
+  for value in "${required_values[@]}"; do
+    if [[ -z "$value" ]]; then
+      echo "正式发布必须配置 App/Installer 签名和 Apple 公证凭据。" >&2
+      exit 1
+    fi
+  done
+fi
 
 APP_PATH="$ROOT_DIR/dist/build/Signal Light.app"
 PKG_ROOT="$ROOT_DIR/dist/pkg-root"
@@ -32,13 +49,6 @@ set -euo pipefail
 exec "/Applications/Signal Light.app/Contents/Resources/bin/codex-signal-hook" "$@"
 SCRIPT
 
-cat > "$INSTALL_BIN_DIR/claude-code-signal-hook" <<'SCRIPT'
-#!/usr/bin/env bash
-set -euo pipefail
-
-exec "/Applications/Signal Light.app/Contents/Resources/bin/claude-code-signal-hook" "$@"
-SCRIPT
-
 cat > "$INSTALL_BIN_DIR/signal-light-uninstall" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -48,7 +58,6 @@ SCRIPT
 
 chmod +x "$INSTALL_BIN_DIR/signal-light" \
   "$INSTALL_BIN_DIR/codex-signal-hook" \
-  "$INSTALL_BIN_DIR/claude-code-signal-hook" \
   "$INSTALL_BIN_DIR/signal-light-uninstall"
 
 xattr -cr "$PKG_ROOT" 2>/dev/null || true
@@ -56,21 +65,7 @@ xattr -rd com.apple.provenance "$PKG_ROOT" 2>/dev/null || true
 find "$PKG_ROOT" -name '._*' -delete
 
 mkdir -p "$PKG_SCRIPTS_DIR"
-cat > "$PKG_SCRIPTS_DIR/postinstall" <<'SCRIPT'
-#!/usr/bin/env bash
-set -euo pipefail
-
-console_user="$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || true)"
-if [[ -n "$console_user" && "$console_user" != "root" && "$console_user" != "loginwindow" ]]; then
-  user_home="$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}' || true)"
-  if [[ -n "$user_home" && -d "$user_home" ]]; then
-    /usr/bin/sudo -u "$console_user" HOME="$user_home" /usr/local/bin/signal-light install-hooks --quiet || true
-  fi
-fi
-
-/usr/bin/open "/Applications/Signal Light.app" || true
-exit 0
-SCRIPT
+cp "$ROOT_DIR/scripts/installer-postinstall" "$PKG_SCRIPTS_DIR/postinstall"
 chmod +x "$PKG_SCRIPTS_DIR/postinstall"
 
 pkgbuild_args=(
@@ -86,6 +81,11 @@ if [[ -n "$INSTALLER_SIGN_IDENTITY" ]]; then
 fi
 "${pkgbuild_args[@]}" "$PKG_PATH"
 
+if [[ "$REQUIRE_SIGNING" == "1" ]]; then
+  codesign --verify --deep --strict "$APP_PATH"
+  pkgutil --check-signature "$PKG_PATH"
+fi
+
 if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
   if [[ -z "$INSTALLER_SIGN_IDENTITY" ]]; then
     echo "Apple notarization requires SIGNAL_LIGHT_INSTALLER_SIGN_IDENTITY." >&2
@@ -98,6 +98,11 @@ if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_
     --wait
   xcrun stapler staple "$PKG_PATH"
   xcrun stapler validate "$PKG_PATH"
+fi
+
+if [[ "$REQUIRE_SIGNING" == "1" ]]; then
+  xcrun stapler validate "$PKG_PATH"
+  spctl --assess --verbose=2 --type install "$PKG_PATH"
 fi
 
 echo "$PKG_PATH"
