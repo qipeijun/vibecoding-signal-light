@@ -14,6 +14,17 @@ from signal_light.runtime import aggregate_sessions, apply_session_signal, write
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def isolate_runtime_state_files(tmp_path, monkeypatch) -> None:
+    """所有 runtime 测试只写 pytest 临时目录，避免依赖本机已有状态目录。"""
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(runtime, "CURRENT_STATUS_FILE", tmp_path / "current_status.json")
+    monkeypatch.setattr(runtime, "HISTORY_FILE", tmp_path / "history.json")
+    monkeypatch.setattr(runtime, "HOOK_ACTIVITY_FILE", tmp_path / "codex_hook_activity.json")
+    monkeypatch.setattr(runtime, "LOCK_FILE", tmp_path / "state.lock")
+
+
 def session_aggregation_cases() -> list[dict[str, object]]:
     return json.loads((FIXTURE_DIR / "session_aggregation.json").read_text())
 
