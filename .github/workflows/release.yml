@@ -32,7 +32,7 @@ jobs:
       - name: 安装 uv
         uses: astral-sh/setup-uv@v7
 
-      - name: 导入 Apple 签名证书
+      - name: 检查 Apple 发布凭据
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
@@ -43,6 +43,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
+          missing_count=0
           required_values=(
             "$MACOS_CERTIFICATE_P12_BASE64"
             "$MACOS_CERTIFICATE_PASSWORD"
@@ -54,10 +55,27 @@ jobs:
           )
           for value in "${required_values[@]}"; do
             if [[ -z "$value" ]]; then
-              echo "::error::正式 Release 缺少 Developer ID 签名或 Apple 公证凭据。"
-              exit 1
+              missing_count=$((missing_count + 1))
             fi
           done
+
+          if [[ "$missing_count" -eq 0 ]]; then
+            echo "SIGNED_RELEASE=1" >> "$GITHUB_ENV"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "::error::Tag 发布必须配置完整的 Developer ID 签名和 Apple 公证凭据。"
+            exit 1
+          else
+            echo "SIGNED_RELEASE=0" >> "$GITHUB_ENV"
+            echo "::notice::未配置 Apple 发布凭据，本次只构建 ad-hoc 安装包并上传 Actions artifact，不创建 GitHub Release。"
+          fi
+
+      - name: 导入 Apple 签名证书
+        if: env.SIGNED_RELEASE == '1'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/signal-light-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
           CERTIFICATE_PATH="$RUNNER_TEMP/signal-light-certificate.p12"
@@ -119,12 +137,15 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          SIGNAL_LIGHT_REQUIRE_SIGNING: "1"
+          SIGNAL_LIGHT_REQUIRE_SIGNING: ${{ env.SIGNED_RELEASE }}
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
 
+      - name: 验证安装包内容
+        run: scripts/verify-installer dist/Signal-Light-Installer.pkg
+
       - name: 验证签名与公证
+        if: env.SIGNED_RELEASE == '1'
         run: |
-          scripts/verify-installer dist/Signal-Light-Installer.pkg
           codesign --verify --deep --strict --verbose=2 "dist/build/Signal Light.app"
           pkgutil --check-signature dist/Signal-Light-Installer.pkg
           xcrun stapler validate dist/Signal-Light-Installer.pkg
@@ -136,7 +157,7 @@ jobs:
           shasum -a 256 Signal-Light-Installer.pkg > Signal-Light-Installer.pkg.sha256
 
       - name: 上传到 Release
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        if: env.SIGNED_RELEASE == '1'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -148,8 +169,8 @@ jobs:
             dist/Signal-Light-Installer.pkg
             dist/Signal-Light-Installer.pkg.sha256
 
-      - name: 上传构建产物 (非 tag)
-        if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
+      - name: 上传未签名构建产物
+        if: env.SIGNED_RELEASE != '1'
         uses: actions/upload-artifact@v6
         with:
           name: signal-light-installer

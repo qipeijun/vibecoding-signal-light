@@ -87,6 +87,8 @@ Release workflow 需要以下 secrets，并会自动签名、公证、staple 和
 - `APPLE_TEAM_ID`：Apple Developer Team ID。
 - `APPLE_APP_SPECIFIC_PASSWORD`：Apple ID app-specific password。
 
+手动运行 Release workflow 但未配置上述凭据时，只会生成 ad-hoc 签名的安装包并上传到 Actions artifact，不会创建 GitHub Release。通过 `v*` Tag 正式发布时仍强制要求完整凭据，缺少任一项都会停止发布。
+
 安装后会写入：
 
 - `/Applications/Signal Light.app`
