@@ -3,12 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Signal Light — Codex 状态灯</title>
-<meta name="description" content="用三盏灯看懂 Codex 在做什么。macOS 原生，多会话自动聚合。">
+<title>Signal Light - Codex 的 macOS 三盏状态灯</title>
+<meta name="description" content="用三盏灯查看 Codex 工作、关注、授权和阻塞状态。支持多会话风险聚合、会话直达和 Codex 额度。">
 <meta name="theme-color" content="#0A0A0C">
+<meta property="og:title" content="Signal Light - Codex 的 macOS 三盏状态灯">
+<meta property="og:description" content="不用反复切回 Codex，也能看见当前状态并返回需要处理的会话。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://qipeijun.github.io/vibecoding-signal-light/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* ============================================
    变量
@@ -24,7 +28,7 @@
   --green:     #34C759;
   --yellow:    #FFCC00;
   --red:       #FF3B30;
-  --font:      "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
+  --font:      "Outfit", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
   --mono:      "JetBrains Mono", "SF Mono", "Fira Code", "Consolas", monospace;
   --ease:      cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -34,13 +38,17 @@ html { scroll-behavior:smooth; -webkit-font-smoothing:antialiased; }
 body { font-family:var(--font); background:var(--bg); color:var(--text); line-height:1.6; overflow-x:hidden; }
 a { color:inherit; text-decoration:none; }
 button { font:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+.skip-link { position:fixed; top:8px; left:8px; z-index:200; padding:8px 12px; border-radius:4px;
+  background:var(--text); color:var(--bg); transform:translateY(-160%); transition:transform 0.2s var(--ease); }
+.skip-link:focus { transform:translateY(0); }
+a:focus-visible, button:focus-visible { outline:2px solid var(--yellow); outline-offset:3px; }
 
 /* ============================================
    导航
    ============================================ */
 .nav { position:fixed; top:0; left:0; right:0; z-index:100; padding:0 32px; height:56px; display:flex; align-items:center; justify-content:space-between;
   backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%); background:rgba(10,10,12,0.72); }
-.nav-l { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; letter-spacing:-0.01em; }
+.nav-l { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; letter-spacing:0; }
 .nav-dots { display:flex; gap:5px; }
 .nav-dots i { width:7px; height:7px; border-radius:50%; display:block; }
 .nav-dots i:nth-child(1) { background:var(--green); box-shadow:0 0 5px rgba(52,199,89,0.5); }
@@ -55,13 +63,7 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
 /* ============================================
    Hero
    ============================================ */
-.hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:100px 32px 120px; position:relative; }
-.hero-bg { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
-.hero-bg::after { content:""; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  width:700px; height:700px; border-radius:50%; transition:background 0.8s var(--ease);
-  background:radial-gradient(circle, rgba(52,199,89,0.10) 0%, rgba(52,199,89,0.02) 45%, transparent 70%); }
-.hero-bg.red::after { background:radial-gradient(circle, rgba(255,59,48,0.12) 0%, rgba(255,59,48,0.02) 45%, transparent 70%); }
-.hero-bg.yellow::after { background:radial-gradient(circle, rgba(255,204,0,0.12) 0%, rgba(255,204,0,0.02) 45%, transparent 70%); }
+.hero { min-height:calc(100dvh - 48px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:88px 32px 72px; position:relative; }
 
 /* ============================================
    信号灯 — 深色面板
@@ -193,20 +195,21 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
    Hero 文字
    ============================================ */
 .hero-tag { position:relative; z-index:2; display:inline-flex; align-items:center; gap:8px;
-  padding:5px 14px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid var(--border);
+  padding:5px 12px; border-radius:6px; background:rgba(255,255,255,0.04); border:1px solid var(--border);
   font-size:13px; color:var(--text-2); margin-bottom:24px; transition:all 0.3s; }
 .hero-tag-dot { width:7px; height:7px; border-radius:50%; transition:background 0.3s, box-shadow 0.3s; }
-.hero-title { position:relative; z-index:2; font-size:clamp(36px, 5.5vw, 52px); font-weight:700;
-  letter-spacing:-0.025em; line-height:1.1; text-align:center; max-width:540px; }
+.hero-title { position:relative; z-index:2; font-size:52px; font-weight:700;
+  letter-spacing:0; line-height:1.1; text-align:center; max-width:620px; text-wrap:balance; }
 .hero-title em { font-style:normal; color:var(--green); transition:color 0.5s; }
 .hero-sub { position:relative; z-index:2; font-size:17px; color:var(--text-2); text-align:center;
   margin-top:16px; max-width:460px; line-height:1.55; }
 .hero-cta { position:relative; z-index:2; margin-top:36px; display:flex; gap:16px; flex-wrap:wrap; justify-content:center; }
 
-.btn { display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:10px;
+.btn { display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:6px;
   font-size:15px; font-weight:600; transition:all 0.2s var(--ease); }
 .btn-green { background:var(--green); color:#000; }
 .btn-green:hover { opacity:0.88; transform:translateY(-1px); }
+.btn:active, .nav-r a:active, .cmd .cp:active { transform:scale(0.98); }
 .btn-ghost { background:rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--text); }
 .btn-ghost:hover { background:rgba(255,255,255,0.08); border-color:var(--border-hi); transform:translateY(-1px); }
 
@@ -216,12 +219,12 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
 .strip { padding:80px 32px; border-top:1px solid var(--border); }
 .strip-inner { max-width:1100px; margin:0 auto; }
 .strip-header { margin-bottom:48px; }
-.strip-header h2 { font-size:28px; font-weight:600; letter-spacing:-0.02em; margin-bottom:8px; }
+.strip-header h2 { font-size:28px; font-weight:600; letter-spacing:0; margin-bottom:8px; }
 .strip-header p { color:var(--text-2); font-size:15px; max-width:460px; }
 
 .lamp-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; }
 
-.lamp-cell { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+.lamp-cell { background:var(--surface); border:1px solid var(--border); border-radius:8px;
   padding:20px; display:flex; flex-direction:column; align-items:center; gap:12px;
   transition:border-color 0.3s, transform 0.3s var(--ease); cursor:default; }
 .lamp-cell:hover { border-color:var(--border-hi); transform:translateY(-2px); }
@@ -270,18 +273,66 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
 @media (max-width:420px) { .lamp-grid { grid-template-columns:1fr; } }
 
 /* ============================================
+   状态中心
+   ============================================ */
+.product { padding:88px 32px; border-top:1px solid var(--border); }
+.product-inner { max-width:1100px; margin:0 auto; display:grid; grid-template-columns:minmax(0, 0.8fr) minmax(560px, 1.2fr); gap:72px; align-items:center; }
+.product-copy h2 { font-size:32px; line-height:1.2; letter-spacing:0; text-wrap:balance; margin-bottom:16px; }
+.product-copy > p { color:var(--text-2); font-size:15px; line-height:1.7; max-width:460px; }
+.product-points { margin-top:28px; display:grid; gap:16px; }
+.product-point { display:grid; grid-template-columns:18px 1fr; gap:10px; align-items:start; }
+.product-point i { width:8px; height:8px; border-radius:50%; background:var(--green); margin-top:7px; box-shadow:0 0 8px rgba(52,199,89,0.5); }
+.product-point strong { display:block; font-size:14px; margin-bottom:2px; }
+.product-point span { color:var(--text-2); font-size:13px; line-height:1.55; }
+
+.status-window { border:1px solid var(--border-hi); border-radius:8px; background:#101014; box-shadow:0 24px 72px rgba(0,0,0,0.44); overflow:hidden; }
+.window-bar { height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); background:#17171d; }
+.window-dots { display:flex; gap:7px; }
+.window-dots i { display:block; width:9px; height:9px; border-radius:50%; }
+.window-dots i:nth-child(1) { background:var(--red); }
+.window-dots i:nth-child(2) { background:var(--yellow); }
+.window-dots i:nth-child(3) { background:var(--green); }
+.window-title { font-size:11px; color:var(--text-3); }
+.status-body { padding:20px; }
+.status-overview { display:grid; grid-template-columns:70px 1fr; gap:18px; align-items:center; padding-bottom:18px; border-bottom:1px solid var(--border); }
+.mini-signal { width:56px; height:106px; border-radius:8px; background:#24242b; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; box-shadow:inset 0 1px rgba(255,255,255,0.06); }
+.mini-signal i { width:18px; height:18px; border-radius:50%; background:#0b0b0d; box-shadow:inset 0 2px 4px rgba(0,0,0,0.6); }
+.mini-signal i:first-child { background:var(--green); box-shadow:0 0 14px rgba(52,199,89,0.55); }
+.status-kicker { color:var(--text-3); font-size:10px; margin-bottom:4px; }
+.status-overview h3 { font-size:24px; line-height:1.2; margin-bottom:6px; }
+.status-overview p { color:var(--text-2); font-size:12px; line-height:1.5; }
+.status-meta { display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; color:var(--text-3); font-family:var(--mono); font-size:9px; }
+.conversation-title { display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px; font-size:11px; color:var(--text-2); }
+.conversation-title span:last-child { color:var(--text-3); }
+.conversation-list { display:grid; gap:5px; }
+.conversation-row { min-height:42px; display:grid; grid-template-columns:8px minmax(0, 1fr) auto auto; gap:10px; align-items:center; padding:7px 9px; border-radius:5px; background:#16161c; }
+.conversation-row.primary { border:1px solid rgba(52,199,89,0.24); background:rgba(52,199,89,0.055); }
+.conversation-row > i { width:7px; height:7px; border-radius:50%; background:var(--green); }
+.conversation-row.attention > i { background:var(--yellow); }
+.conversation-name { min-width:0; }
+.conversation-name strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+.conversation-name span { color:var(--text-3); font-size:9px; }
+.conversation-state { color:var(--green); font-size:10px; white-space:nowrap; }
+.conversation-row.attention .conversation-state { color:var(--yellow); }
+.conversation-time { color:var(--text-3); font-family:var(--mono); font-size:9px; white-space:nowrap; }
+.quota-row { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; justify-content:space-between; gap:16px; font-size:10px; }
+.quota-row span:first-child { color:var(--text-2); }
+.quota-row span:last-child { color:var(--green); font-family:var(--mono); text-align:right; }
+@media (max-width:960px) { .product-inner { grid-template-columns:1fr; gap:40px; } }
+
+/* ============================================
    详情区
    ============================================ */
 .detail { padding:80px 32px; border-top:1px solid var(--border); }
 .detail-inner { max-width:900px; margin:0 auto; }
 .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:48px 64px; }
-.detail-item h3 { font-size:18px; font-weight:600; margin-bottom:8px; letter-spacing:-0.01em; }
+.detail-item h3 { font-size:18px; font-weight:600; margin-bottom:8px; letter-spacing:0; }
 .detail-item h3 b { font-weight:700; }
 .detail-item p { font-size:14px; color:var(--text-2); line-height:1.65; }
 
-.agg-bar { grid-column:1/-1; margin-top:8px; padding:20px 24px; border-radius:12px;
+.agg-bar { grid-column:1/-1; margin-top:8px; padding:20px 24px; border-radius:8px;
   background:var(--surface); border:1px solid var(--border); }
-.agg-bar-label { font-size:12px; font-weight:600; color:var(--text-3); letter-spacing:0.06em; margin-bottom:12px; }
+.agg-bar-label { font-size:12px; font-weight:600; color:var(--text-3); letter-spacing:0; margin-bottom:12px; }
 .agg-bar-flow { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-family:var(--mono); font-size:12px; }
 .agg-t { padding:4px 10px; border-radius:4px; font-weight:500; }
 .agg-t.blocked    { background:rgba(255,59,48,0.14);  color:var(--red); }
@@ -298,9 +349,10 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
    ============================================ */
 .install { padding:80px 32px; border-top:1px solid var(--border); }
 .install-inner { max-width:700px; margin:0 auto; }
-.install-inner h2 { font-size:28px; font-weight:600; letter-spacing:-0.02em; margin-bottom:32px; }
+.install-inner h2 { font-size:28px; font-weight:600; letter-spacing:0; margin-bottom:12px; }
+.install-lead { margin-bottom:28px; color:var(--text-2); font-size:14px; }
 .cmds { display:flex; flex-direction:column; gap:12px; }
-.cmd { position:relative; padding:18px 20px; border-radius:10px; background:var(--surface); border:1px solid var(--border);
+.cmd { position:relative; padding:18px 20px; border-radius:8px; background:var(--surface); border:1px solid var(--border);
   font-family:var(--mono); font-size:13px; line-height:1.8; overflow-x:auto; }
 .cmd .pr { color:var(--green); user-select:none; }
 .cmd .co { color:var(--text-3); }
@@ -341,7 +393,12 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
   .cup { inset:-4.5px; }
   .glow-o { inset:-15px; }
   .glow-m { inset:-6px; }
-  .hero { padding:80px 20px 100px; }
+  .hero { padding:72px 20px 56px; }
+  .signal { margin-bottom:32px; }
+  .hero-tag { margin-bottom:18px; }
+  .hero-sub { margin-top:12px; }
+  .hero-cta { margin-top:24px; }
+  .hero-title { font-size:40px; }
   .detail-grid { grid-template-columns:1fr; gap:32px; }
 }
 
@@ -353,29 +410,41 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
   .cup { inset:-4px; }
   .glow-o { inset:-13px; }
   .glow-m { inset:-5px; }
+  .hero { padding-top:64px; padding-bottom:44px; }
+  .hero-title { font-size:36px; }
+  .hero-sub { font-size:15px; }
+  .product { padding:64px 18px; }
+  .status-body { padding:14px; }
+  .status-overview { grid-template-columns:56px 1fr; gap:12px; }
+  .mini-signal { width:48px; height:92px; }
+  .status-overview h3 { font-size:20px; }
+  .conversation-row { grid-template-columns:7px minmax(0, 1fr) auto; }
+  .conversation-state { display:none; }
+  .quota-row { flex-direction:column; gap:6px; }
+  .quota-row span:last-child { text-align:left; }
   .agg-bar-flow { font-size:11px; gap:4px; }
 }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">跳到主要内容</a>
 
 <!-- 导航 -->
-<nav class="nav">
-  <div class="nav-l">
-    <span class="nav-dots"><i></i><i></i><i></i></span>
+<nav class="nav" aria-label="主导航">
+  <a class="nav-l" href="#main">
+    <span class="nav-dots" aria-hidden="true"><i></i><i></i><i></i></span>
     Signal Light
-  </div>
+  </a>
   <div class="nav-r">
     <a href="https://github.com/qipeijun/vibecoding-signal-light" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest" class="nav-cta" target="_blank" rel="noopener">下载</a>
+    <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg" class="nav-cta">下载</a>
   </div>
 </nav>
 
+<main id="main">
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-bg" id="heroBg"></div>
-
-  <div class="signal">
+  <div class="signal" aria-hidden="true">
     <div class="signal-shadow"></div>
     <div class="enclosure">
       <div class="lamps">
@@ -413,14 +482,63 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
   </div>
 
   <h1 class="hero-title">Codex 的<em id="heroEm">三盏状态灯</em></h1>
-  <p class="hero-sub">绿、黄、红三色灯语，一眼判断 Agent 是否需要你。</p>
+  <p class="hero-sub">不用反复切回 Codex，也能看见当前状态并返回需要处理的会话。</p>
 
   <div class="hero-cta">
-    <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest" class="btn btn-green" target="_blank" rel="noopener">
+    <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg" class="btn btn-green">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v15M5 12l7 7 7-7"/></svg>
       下载 macOS 版
     </a>
     <a href="#lamps" class="btn btn-ghost">灯语手册</a>
+  </div>
+</section>
+
+<!-- 状态中心 -->
+<section class="product" aria-labelledby="product-title">
+  <div class="product-inner">
+    <div class="product-copy">
+      <h2 id="product-title">不只看灯，还能直接回到那条会话</h2>
+      <p>菜单栏左键打开原生状态中心。主灯说明当前最高风险，活跃会话和最近对话保留各自名称、模型与更新时间。</p>
+      <div class="product-points">
+        <div class="product-point"><i aria-hidden="true"></i><div><strong>风险优先，而不是最后写入优先</strong><span>阻塞和授权不会被后来出现的绿色工作事件覆盖。</span></div></div>
+        <div class="product-point"><i aria-hidden="true"></i><div><strong>点击会话直接返回 Codex</strong><span>通过 Codex URL Scheme 定位具体会话；无法定位时回到来源应用。</span></div></div>
+        <div class="product-point"><i aria-hidden="true"></i><div><strong>同时查看本机 Codex 额度</strong><span>状态中心展示 5 小时和 7 天窗口的剩余比例。</span></div></div>
+      </div>
+    </div>
+
+    <div class="status-window" role="img" aria-label="Signal Light 原生状态中心示意，显示工作中的主灯、两个活跃会话和 Codex 剩余额度">
+      <div class="window-bar">
+        <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="window-title">Signal Light</span>
+      </div>
+      <div class="status-body">
+        <div class="status-overview">
+          <div class="mini-signal" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div>
+            <div class="status-kicker">当前状态</div>
+            <h3>工作中</h3>
+            <p>Codex 正在执行工具、读写文件、跑命令或测试。</p>
+            <div class="status-meta"><span>Codex</span><span>gpt-5</span><span>刚刚更新</span></div>
+          </div>
+        </div>
+        <div class="conversation-title"><span>活跃会话</span><span>2 个</span></div>
+        <div class="conversation-list">
+          <div class="conversation-row primary">
+            <i aria-hidden="true"></i>
+            <div class="conversation-name"><strong>更新 README 和落地页</strong><span>Codex · gpt-5</span></div>
+            <span class="conversation-state">主灯 · 工作中</span>
+            <span class="conversation-time">刚刚</span>
+          </div>
+          <div class="conversation-row attention">
+            <i aria-hidden="true"></i>
+            <div class="conversation-name"><strong>检查安装包发布流程</strong><span>Codex · gpt-5</span></div>
+            <span class="conversation-state">等待查看</span>
+            <span class="conversation-time">4 分钟前</span>
+          </div>
+        </div>
+        <div class="quota-row"><span>Codex 额度</span><span>5 小时剩余 82% · 7 天剩余 61%</span></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -475,11 +593,8 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
 <section class="install">
   <div class="install-inner">
     <h2>安装</h2>
+    <p class="install-lead">支持 macOS 11 及以上版本。下载经过签名和公证的安装包，安装后在 Codex 的 <code>/hooks</code> 面板确认首次发现的 Hook。</p>
     <div class="cmds">
-      <div class="cmd">
-        <span class="pr">$ </span>brew install --cask signal-light
-        <button class="cp" onclick="copy(this,'brew install --cask signal-light')">复制</button>
-      </div>
       <div class="cmd">
         <span class="pr">$ </span>open "/Applications/Signal Light.app"<br>
         <span class="pr">$ </span>signal-light list<span class="co">  # 列出所有灯语</span><br>
@@ -489,13 +604,14 @@ button { font:inherit; cursor:pointer; border:none; background:none; color:inher
       </div>
     </div>
     <div class="install-cta">
-      <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest" class="btn btn-green" target="_blank" rel="noopener">
+      <a href="https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg" class="btn btn-green">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v15M5 12l7 7 7-7"/></svg>
         下载最新版
       </a>
     </div>
   </div>
 </section>
+</main>
 
 <!-- Footer -->
 <footer class="footer">
@@ -547,7 +663,6 @@ function cb(mode,tick) {
 
 /* ============ Hero 灯光 ============ */
 const lamps = [document.getElementById("l0"),document.getElementById("l1"),document.getElementById("l2")];
-const heroBg = document.getElementById("heroBg");
 const heroDot = document.getElementById("heroDot");
 const heroState = document.getElementById("heroState");
 const heroEm = document.getElementById("heroEm");
@@ -568,7 +683,6 @@ function setLamp(el, color, b) {
 }
 
 function applyDemo(d) {
-  heroBg.className = "hero-bg " + d.color;
   heroDot.style.background = d.color==="green"?"var(--green)":d.color==="yellow"?"var(--yellow)":"var(--red)";
   heroDot.style.boxShadow = "0 0 6px "+(d.color==="green"?"rgba(52,199,89,0.5)":d.color==="yellow"?"rgba(255,204,0,0.5)":"rgba(255,59,48,0.5)");
   heroState.textContent = d.state;

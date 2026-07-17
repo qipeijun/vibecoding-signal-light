@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://qipeijun.github.io/vibecoding-signal-light/sitemap.xml

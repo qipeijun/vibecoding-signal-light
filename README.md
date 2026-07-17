@@ -2,78 +2,68 @@
 
 [![GitHub Pages](https://img.shields.io/badge/website-online-22c949?style=flat-square)](https://qipeijun.github.io/vibecoding-signal-light/)
 [![macOS](https://img.shields.io/badge/macOS-11%2B-111111?style=flat-square&logo=apple)](#安装)
-[![AI Agents](https://img.shields.io/badge/Codex%20%7C%20Claude%20Code-supported-22c949?style=flat-square)](#codex-集成)
+[![Codex](https://img.shields.io/badge/Codex-supported-22c949?style=flat-square)](#codex-集成)
 
-给 Codex、Claude Code 等本地 AI 编程助手一个看得见的 macOS 状态灯。
+Codex 的 macOS 三盏状态灯。
 
-Vibecoding Signal Light 是一个 macOS 原生 AI Agent 状态提示工具，用悬浮三色灯、菜单栏图标和配置面板展示 Codex、Claude Code 等本地 Agent 的实时状态。它适合长时间让 Agent 跑工具、改文件、等权限或等待你继续回复的场景：不用反复切回终端，也能一眼知道现在该不该处理。
+Vibecoding Signal Light 用绿、黄、红三盏灯显示 Codex 的工作、关注、授权和阻塞。多个会话并行时按风险优先级聚合，不用反复切回 Codex，也能判断现在是否需要处理。
 
-项目预览地址：[在线预览](https://qipeijun.github.io/vibecoding-signal-light/)
+[下载最新 macOS 安装包](https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg) · [在线预览](https://qipeijun.github.io/vibecoding-signal-light/) · [查看所有版本](https://github.com/qipeijun/vibecoding-signal-light/releases)
 
 ## 适合谁
 
-- 经常同时跑 Codex、Claude Code 或本地自动化脚本的开发者。
-- 想在 macOS 菜单栏或桌面悬浮窗里看到 Agent 状态的人。
+- 经常同时运行多个 Codex 会话的开发者。
+- 想在 macOS 菜单栏、状态中心或桌面悬浮窗里看到 Codex 状态的人。
 - 需要区分“正在工作”“等待授权”“需要关注”“已经完成”的长任务工作流。
 
-GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](docs/GITHUB_ABOUT.md)。
+## 核心体验
 
-## 界面预览
-
-### 悬浮状态灯
-
-![悬浮状态灯](docs/images/screenshot-floating-light.png)
-
-### 显示设置
-
-![显示设置面板](docs/images/screenshot-settings-display.png)
-
-### 状态规则
-
-![状态规则面板](docs/images/screenshot-rules-panel.png)
-
-### 配置诊断
-
-![配置诊断面板](docs/images/screenshot-diagnostics.png)
-
-### 演示视频
-
-<video src="https://github.com/user-attachments/assets/509e2720-5d0c-4852-89b9-305272a998b1" controls muted playsinline width="720">
-  <a href="https://github.com/user-attachments/assets/509e2720-5d0c-4852-89b9-305272a998b1">查看演示视频 1</a>
-</video>
-
-<video src="https://github.com/user-attachments/assets/b676d1f0-470c-4ce9-970e-c6f3e2542ea4" controls muted playsinline width="720">
-  <a href="https://github.com/user-attachments/assets/b676d1f0-470c-4ce9-970e-c6f3e2542ea4">查看演示视频 2</a>
-</video>
+- **三盏灯状态中心**：展示当前主灯、状态说明、来源应用、模型、更新时间和跨会话风险。
+- **活跃会话与最近对话**：读取本机 Codex 会话索引，显示真实会话名称；点击整行可通过 Codex URL Scheme 返回对应会话。
+- **Codex 额度**：在状态中心查看 5 小时和 7 天窗口的剩余额度，并支持手动刷新。
+- **菜单栏与悬浮灯**：菜单栏随时查看聚合状态，桌面悬浮灯支持置顶、透明度、尺寸和动画速度设置。
+- **本地优先**：状态历史只保留灯语、时间、来源与模型等必要元数据，不记录提示词、工具参数、命令或输出。
 
 ## 功能特性
 
 - macOS 原生 AppKit 应用，不依赖网页窗口渲染主界面。
-- 菜单栏常驻三色灯图标，左键打开设置面板，右键打开快捷菜单。
+- 菜单栏常驻三色灯图标，左键打开状态中心，右键打开快捷菜单。
 - 可拖动的桌面悬浮状态灯，支持置顶、透明度、尺寸和动画速度配置。
-- 单击悬浮状态灯可跳回产生当前状态的 AI 或终端应用，拖动浮层不触发跳转。
-- 支持 Codex、Claude Code hook，把本地 Agent 事件映射为灯语。
-- 安装包会自动写入用户级 Codex / Claude Code hooks，也可用 `signal-light doctor` 检查接线状态。
-- 支持多会话状态：整体状态以最近一次有效 hook 写入为准，避免旧会话长期压住新会话。
-- 支持状态规则自定义，可以为每个已知状态配置颜色和动画模式。
-- 提供配置诊断和修复入口，能检查配置文件、状态目录、写入权限和 Agent hooks 接线。
+- 单击悬浮状态灯可跳回当前主灯对应的 Codex 会话或来源应用，拖动浮层不触发跳转。
+- 状态中心列出活跃会话和最近对话，支持整行点击返回指定 Codex 会话。
+- 状态中心显示 Codex 5 小时与 7 天额度窗口的剩余比例。
+- 支持 Codex hook，把本地事件映射为灯语。
+- 安装包会自动写入用户级 Codex hooks，也可用 `signal-light doctor` 检查接线状态。
+- 支持多会话风险优先聚合：阻塞、授权和关注状态不会被新的绿色工作事件覆盖。
+- 状态颜色语义固定，只允许调整动画模式，避免把高风险状态误配成绿灯。
+- 本地保留最近 24 小时或 200 条最小状态历史，不记录提示词、命令与输出。
+- 提供配置诊断和修复入口，能检查配置文件、状态目录、写入权限和 Codex Hook 接线。
 - 安装包会安装 App 和命令行工具，安装后的 hook 不依赖 Python 环境。
 
 ## 灯语说明
 
 | 灯效 | 状态含义 | 你需要做什么 |
 | --- | --- | --- |
-| 绿灯常亮 | 空闲、完成、会话开始或结束 | 不用处理 |
-| 绿灯脉冲 | Agent 正在思考、执行工具、写文件、跑测试或输出内容 | 等它继续跑 |
-| 黄灯闪烁 | Agent 停下来等你查看结果或继续回复 | 有空看一眼 |
-| 红灯闪烁 | 请求授权、阻塞、失败或需要你明确处理 | 立即处理 |
+| 绿灯常亮 | 空闲、会话开始或结束 | 不用处理 |
+| 绿灯脉冲 | Codex 正在思考、执行工具、写文件、跑测试或输出内容 | 等它继续跑 |
+| 绿灯双闪 | 任务刚刚完成 | 不用处理 |
+| 黄灯闪烁 | Codex 等你查看结果或继续回复 | 有空看一眼 |
+| 黄灯慢呼吸 | 状态来源失联，当前真实状态无法确认 | 检查 Codex 或 Hook |
+| 红灯慢呼吸 | 等待授权 | 立即确认 |
+| 红灯双闪 | 阻塞或失败 | 立即处理 |
 | 全灭 | 状态关闭 | 不用处理 |
 
-状态规则只影响 macOS 显示端，不改变 hook 写入的状态枚举；多个会话同时存在时，以最近一次状态更新为准。
+多个会话同时存在时按 `阻塞 > 授权 > 关注/失联 > 工作 > 完成 > 空闲` 聚合，同级状态选择最近更新的会话。
 
 ## 安装
 
-构建安装包：
+系统要求：macOS 11 或更高版本。登录启动的自动注册需要 macOS 13 或更高版本。
+
+从 [GitHub Release](https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg) 下载最新 `Signal-Light-Installer.pkg` 并安装。正式 Release 会经过 Developer ID 签名、公证和 Gatekeeper 验证。
+
+安装完成后，在 Codex 的 `/hooks` 面板确认首次发现的非托管 Hook。Signal Light 的诊断页会区分“未配置”“等待首次事件”和“已连接”。
+
+从源码构建开发安装包：
 
 ```bash
 ./scripts/build-installer
@@ -85,16 +75,9 @@ GitHub About 推荐描述、Topics 和站点链接见 [docs/GITHUB_ABOUT.md](doc
 open "dist/Signal-Light-Installer.pkg"
 ```
 
-如果下载 GitHub Release 里的安装包后 macOS 提示“Apple 无法验证 Signal-Light-Installer.pkg 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件”，可以按下面两步继续安装：
+本地构建的开发包默认使用 ad-hoc 签名，macOS 可能提示无法验证。确认安装包来自本地源码后，可在“系统设置 → 隐私与安全性”中选择“仍要打开”。
 
-1. 在弹窗里点“完成”，不要点“移到废纸篓”。
-2. 打开“系统设置” → “隐私与安全性”，在“安全性”区域找到“已阻止 Signal-Light-Installer.pkg 以保护 Mac”，点“仍要打开”，再按系统提示继续安装。
-
-![macOS 提示无法验证安装包，先点击完成](docs/images/gatekeeper-package-blocked.png)
-
-![在隐私与安全性中点击仍要打开](docs/images/privacy-security-open-anyway.png)
-
-GitHub Release 中面向普通用户分发的 pkg 需要 Apple Developer ID 签名和 notarization，否则浏览器下载后会被 macOS Gatekeeper 拦截。Release workflow 支持以下 secrets；配置后会自动签名、公证并 staple：
+Release workflow 需要以下 secrets，并会自动签名、公证、staple 和验证：
 
 - `MACOS_CERTIFICATE_P12_BASE64`：包含 Developer ID Application / Installer 证书和私钥的 p12 文件 base64。
 - `MACOS_CERTIFICATE_PASSWORD`：p12 密码。
@@ -109,13 +92,13 @@ GitHub Release 中面向普通用户分发的 pkg 需要 Apple Developer ID 签�
 - `/Applications/Signal Light.app`
 - `/usr/local/bin/signal-light`
 - `/usr/local/bin/codex-signal-hook`
-- `/usr/local/bin/claude-code-signal-hook`
 - `/usr/local/bin/signal-light-uninstall`
 
 安装器会在当前登录用户下尝试写入：
 
 - `~/.codex/hooks.json`
-- `~/.claude/settings.json`
+
+从旧版升级时，安装器会移除旧 Signal Light 写入的 Claude Hook 和命令文件，但保留用户自己的其他 Claude 配置。
 
 Codex 的非托管 hook 首次运行前仍需要在 Codex 的 `/hooks` 面板里确认信任，这是 Codex 自身的安全机制。
 
@@ -162,7 +145,7 @@ signal-light quit
 signal-light doctor
 ```
 
-手动重新写入 Codex / Claude Code hooks：
+手动重新写入 Codex hooks：
 
 ```bash
 signal-light install-hooks
@@ -187,37 +170,11 @@ codex-signal-hook Stop
 | `UserPromptSubmit` | 绿灯脉冲 |
 | `PreToolUse` | 绿灯脉冲 |
 | `PostToolUse` | 绿灯脉冲 |
-| `PermissionRequest` | 红灯闪烁 |
-| `Stop` | 绿灯常亮 |
+| `PermissionRequest` | 红灯慢呼吸 |
+| `Stop` | 绿灯双闪后回到空闲 |
 | `SessionEnd` | 绿灯常亮 |
 
-完整灯语和 hook 示例见 [docs/LAMP_LANGUAGE.md](docs/LAMP_LANGUAGE.md)。
-
-## Claude Code 集成
-
-Claude Code hook 通常从 stdin 传入 JSON：
-
-```bash
-echo '{"event":"PreToolUse","session_id":"demo"}' | claude-code-signal-hook
-echo '{"event":"PermissionRequest","session_id":"demo"}' | claude-code-signal-hook
-echo '{"event":"Notification","session_id":"demo"}' | claude-code-signal-hook
-```
-
-常见映射：
-
-| Claude Code 事件 | 状态灯表现 |
-| --- | --- |
-| `SessionStart` | 绿灯常亮 |
-| `UserPromptSubmit` | 绿灯脉冲 |
-| `PreToolUse` | 绿灯脉冲 |
-| `PostToolUse` | 绿灯脉冲 |
-| `PostToolUseFailure` | 红灯闪烁 |
-| `PermissionDenied` | 红灯闪烁 |
-| `Notification` | 黄灯闪烁 |
-| `PermissionRequest` | 红灯闪烁 |
-| `Stop` | 绿灯常亮 |
-| `StopFailure` | 红灯闪烁 |
-| `SessionEnd` | 绿灯常亮 |
+Hook payload 如果通过 `status`、`state`、`error`、`failure`、`exception` 或非零 `exit_status` 明确报告失败，会映射为红灯双闪的 `blocked` 状态。
 
 ## 配置文件
 
@@ -233,13 +190,17 @@ Mac App、Swift CLI 和 Python 开发脚本共享同一份配置。环境变量�
 | --- | --- |
 | `SIGNAL_LIGHT_STATE_DIR` | `agent.stateDirectory` |
 | `SIGNAL_LIGHT_SESSION_TTL_SECONDS` | `agent.sessionTTLSeconds` |
+| `SIGNAL_LIGHT_WORKING_LEASE_SECONDS` | `agent.workingLeaseSeconds` |
+| `SIGNAL_LIGHT_ATTENTION_LEASE_SECONDS` | `agent.attentionLeaseSeconds` |
+| `SIGNAL_LIGHT_CRITICAL_LEASE_SECONDS` | `agent.criticalLeaseSeconds` |
+| `SIGNAL_LIGHT_DONE_DISPLAY_SECONDS` | `agent.doneDisplaySeconds` |
 
 配置生命周期：
 
 - 首次启动缺少配置文件时，会自动创建默认配置。
 - 旧配置会按字段合并升级，保留已有用户设置并补齐缺失字段。
 - JSON 损坏时会备份为 `.broken-<timestamp>.json` 后重建默认配置。
-- 非法状态规则、颜色或动画模式会被清理，并保存清理后的配置。
+- 旧版自定义颜色和非法动画模式会被清理，并保存清理后的配置。
 - 保存或修复失败会在 UI 中显示错误，CLI 会返回非 0。
 
 检查配置：
@@ -256,12 +217,12 @@ signal-light config repair
 
 ## 设置面板
 
-左键点击菜单栏图标打开设置面板：
+左键点击菜单栏图标先打开三盏灯状态中心，查看主状态、来源、模型、活跃会话、最近对话和 Codex 额度；点击齿轮进入设置：
 
 - **显示**：悬浮窗启动显示、置顶、窗口大小、透明度、动画速度、Dock 图标、Touch Bar。
-- **Agent**：状态目录、会话超时、登录启动、清理会话。
-- **规则**：为 11 个已知状态配置颜色和动画模式。
-- **诊断**：检查配置文件、状态目录和修复写入问题。
+- **Codex**：状态目录、分级租约、登录启动、清理会话和状态历史。
+- **规则**：为 12 个已知状态调整动画模式；颜色由风险语义锁定。
+- **诊断**：区分 Hook 未配置、等待首次事件和已连接；重建配置、恢复默认与 Hook 修复都需要明确确认。
 
 右键点击菜单栏图标打开快捷菜单，可以显示/隐藏悬浮窗或退出应用。
 
