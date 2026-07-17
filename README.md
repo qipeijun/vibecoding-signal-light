@@ -59,7 +59,7 @@ Vibecoding Signal Light 用绿、黄、红三盏灯显示 Codex 的工作、关�
 
 系统要求：macOS 11 或更高版本。登录启动的自动注册需要 macOS 13 或更高版本。
 
-从 [GitHub Release](https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg) 下载最新 `Signal-Light-Installer.pkg` 并安装。正式 Release 会经过 Developer ID 签名、公证和 Gatekeeper 验证。
+从 [GitHub Release](https://github.com/qipeijun/vibecoding-signal-light/releases/latest/download/Signal-Light-Installer.pkg) 下载最新 `Signal-Light-Installer.pkg` 并安装。当前 Release 默认使用 ad-hoc 签名，macOS 可能提示无法验证；确认下载地址来自本仓库后，可在“系统设置 → 隐私与安全性”中选择“仍要打开”。
 
 安装完成后，在 Codex 的 `/hooks` 面板确认首次发现的非托管 Hook。Signal Light 的诊断页会区分“未配置”“等待首次事件”和“已连接”。
 
@@ -77,7 +77,7 @@ open "dist/Signal-Light-Installer.pkg"
 
 本地构建的开发包默认使用 ad-hoc 签名，macOS 可能提示无法验证。确认安装包来自本地源码后，可在“系统设置 → 隐私与安全性”中选择“仍要打开”。
 
-Release workflow 需要以下 secrets，并会自动签名、公证、staple 和验证：
+Release workflow 在配置以下可选 secrets 后，会自动执行 Developer ID 签名、公证、staple 和验证：
 
 - `MACOS_CERTIFICATE_P12_BASE64`：包含 Developer ID Application / Installer 证书和私钥的 p12 文件 base64。
 - `MACOS_CERTIFICATE_PASSWORD`：p12 密码。
@@ -87,7 +87,7 @@ Release workflow 需要以下 secrets，并会自动签名、公证、staple 和
 - `APPLE_TEAM_ID`：Apple Developer Team ID。
 - `APPLE_APP_SPECIFIC_PASSWORD`：Apple ID app-specific password。
 
-手动运行 Release workflow 但未配置上述凭据时，只会生成 ad-hoc 签名的安装包并上传到 Actions artifact，不会创建 GitHub Release。通过 `v*` Tag 正式发布时仍强制要求完整凭据，缺少任一项都会停止发布。
+未配置上述凭据时，手动运行 workflow 或推送 `v*` Tag 仍会创建 GitHub Release，并明确标注安装包采用 ad-hoc 签名；未签名构建也会额外保留一份 Actions artifact。
 
 安装后会写入：
 
