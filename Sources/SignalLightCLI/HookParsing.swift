@@ -11,27 +11,6 @@ private let codexEventToSignal: [String: String] = [
     "SessionEnd": "session_end",
 ]
 
-private let claudeEventToSignal: [String: String] = [
-    "SessionStart": "session_start",
-    "UserPromptSubmit": "thinking",
-    "PreToolUse": "working",
-    "PostToolUse": "tool_done",
-    "PostToolUseFailure": "blocked",
-    "PostToolBatch": "working",
-    "PermissionDenied": "blocked",
-    "PreCompact": "working",
-    "PostCompact": "tool_done",
-    "SubagentStart": "working",
-    "SubagentStop": "tool_done",
-    "TaskCreated": "working",
-    "TaskCompleted": "tool_done",
-    "Stop": "done",
-    "StopFailure": "blocked",
-    "Notification": "attention",
-    "PermissionRequest": "permission",
-    "SessionEnd": "session_end",
-]
-
 private let failureSignals: [String: String] = [
     "error": "blocked",
     "failed": "blocked",
@@ -52,8 +31,6 @@ private let modelEnvironmentKeys = [
     "SIGNAL_LIGHT_MODEL",
     "CODEX_MODEL",
     "OPENAI_MODEL",
-    "ANTHROPIC_MODEL",
-    "CLAUDE_MODEL",
 ]
 
 func readPayload(stdinText: String) -> [String: Any] {
@@ -88,21 +65,6 @@ func chooseCodexSignal(eventName: String, payload: [String: Any]) -> String {
     return codexEventToSignal[eventName] ?? codexEventToSignal[eventName.trimmingCharacters(in: .whitespacesAndNewlines)] ?? "attention"
 }
 
-func chooseClaudeSignal(eventName: String, payload: [String: Any]) -> String {
-    if let explicit = firstString(payload, keys: ["signal", "signal_name"])?.lowercased(),
-       validSignals.contains(explicit) {
-        return explicit
-    }
-
-    if eventName == "Stop",
-       let stopReason = payload["stop_reason"] as? String,
-       ["max_tokens", "error"].contains(stopReason) {
-        return "blocked"
-    }
-
-    return claudeEventToSignal[eventName] ?? "attention"
-}
-
 func codexSessionKey(payload: [String: Any], environment: [String: String]) -> String {
     if let explicit = firstString(
         payload,
@@ -126,23 +88,6 @@ func codexSessionKey(payload: [String: Any], environment: [String: String]) -> S
 
     if let cwd = firstString(payload, keys: ["cwd", "workspace", "workspace_dir", "project_dir"]) {
         return "cwd:\(cwd)"
-    }
-    return "global"
-}
-
-func claudeSessionKey(payload: [String: Any], environment: [String: String]) -> String {
-    if let sid = payload["session_id"] as? String, !sid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return sid.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    for key in ["CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"] {
-        if let value = environment[key], !value.isEmpty {
-            return value
-        }
-    }
-
-    if let cwd = payload["cwd"] as? String, !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return "cwd:\(cwd.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
     return "global"
 }

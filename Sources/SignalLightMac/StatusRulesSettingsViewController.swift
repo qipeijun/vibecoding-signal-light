@@ -4,7 +4,7 @@ import SignalLightShared
 final class StatusRulesSettingsViewController: NSViewController {
     private struct RuleRow {
         let signal: String
-        let colorPopup: NSPopUpButton
+        let colorLabel: NSTextField
         let modePopup: NSPopUpButton
         let stateLabel: NSTextField
         let appearanceLabel: NSTextField
@@ -19,12 +19,10 @@ final class StatusRulesSettingsViewController: NSViewController {
     private let resetAllButton = NSButton(title: "全部恢复默认", target: nil, action: nil)
 
     private let contentWidth: CGFloat = 636
-    private let colorValues: [String?] = [nil, "green", "yellow", "red"]
-    private let modeValues: [String?] = [nil, "off", "steady", "flash", "workPulse"]
     private let groups: [(title: String, signals: [String])] = [
         ("日常状态", ["idle", "done", "off"]),
         ("工作流程", ["thinking", "working", "tool_done"]),
-        ("需要关注", ["attention", "permission", "blocked"]),
+        ("需要关注", ["attention", "stale", "permission", "blocked"]),
         ("会话事件", ["session_start", "session_end"]),
     ]
 
@@ -146,7 +144,7 @@ final class StatusRulesSettingsViewController: NSViewController {
 
         let content = NSStackView()
         content.orientation = .horizontal
-        content.spacing = 10
+        content.spacing = 8
         content.alignment = .centerY
         content.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
 
@@ -155,23 +153,24 @@ final class StatusRulesSettingsViewController: NSViewController {
         previewView.heightAnchor.constraint(equalToConstant: 42).isActive = true
 
         let textStack = makeSignalTextStack(signal: signal)
-        let controls = makeControls(signal: signal)
+        let modePopup = makeModeControl(signal: signal)
+        let colorLabel = makeLockedColorLabel(signal: signal)
 
-        let stateLabel = makeMetaLabel(width: 62)
-        let appearanceLabel = makeMetaLabel(width: 88)
+        let stateLabel = makeMetaLabel(width: 50)
+        let appearanceLabel = makeMetaLabel(width: 78)
 
         let resetButton = NSButton(title: "恢复", target: self, action: #selector(resetRule(_:)))
         resetButton.bezelStyle = .inline
         resetButton.controlSize = .small
         resetButton.identifier = NSUserInterfaceItemIdentifier(signal)
-        resetButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        resetButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
 
         content.addArrangedSubview(previewView)
         content.addArrangedSubview(textStack)
         content.addArrangedSubview(stateLabel)
         content.addArrangedSubview(appearanceLabel)
-        content.addArrangedSubview(controls.colorPopup)
-        content.addArrangedSubview(controls.modePopup)
+        content.addArrangedSubview(colorLabel)
+        content.addArrangedSubview(modePopup)
         content.addArrangedSubview(resetButton)
 
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -187,8 +186,8 @@ final class StatusRulesSettingsViewController: NSViewController {
 
         ruleRows.append(RuleRow(
             signal: signal,
-            colorPopup: controls.colorPopup,
-            modePopup: controls.modePopup,
+            colorLabel: colorLabel,
+            modePopup: modePopup,
             stateLabel: stateLabel,
             appearanceLabel: appearanceLabel,
             previewView: previewView,
@@ -202,7 +201,7 @@ final class StatusRulesSettingsViewController: NSViewController {
         stack.orientation = .vertical
         stack.spacing = 2
         stack.alignment = .leading
-        stack.widthAnchor.constraint(equalToConstant: 174).isActive = true
+        stack.widthAnchor.constraint(equalToConstant: 154).isActive = true
 
         let title = NSTextField(labelWithString: localizedSignalName(signal))
         title.font = NSFont.boldSystemFont(ofSize: 13)
@@ -217,15 +216,8 @@ final class StatusRulesSettingsViewController: NSViewController {
         return stack
     }
 
-    private func makeControls(signal: String) -> (colorPopup: NSPopUpButton, modePopup: NSPopUpButton) {
-        let colorPopup = makePopup(width: 112)
-        for title in colorTitles(for: signal) {
-            colorPopup.addItem(withTitle: title)
-        }
-        colorPopup.target = self
-        colorPopup.action = #selector(ruleChanged(_:))
-
-        let modePopup = makePopup(width: 112)
+    private func makeModeControl(signal: String) -> NSPopUpButton {
+        let modePopup = makePopup(width: 98)
         for title in modeTitles(for: signal) {
             modePopup.addItem(withTitle: title)
         }
@@ -233,9 +225,20 @@ final class StatusRulesSettingsViewController: NSViewController {
         modePopup.action = #selector(ruleChanged(_:))
 
         let currentRule = rulesConfig.rules[signal]
-        colorPopup.selectItem(at: colorValues.firstIndex { $0 == currentRule?.color } ?? 0)
-        modePopup.selectItem(at: modeValues.firstIndex { $0 == currentRule?.mode } ?? 0)
-        return (colorPopup, modePopup)
+        let values = modeValues(for: signal)
+        modePopup.selectItem(at: values.firstIndex { $0 == currentRule?.mode } ?? 0)
+        return modePopup
+    }
+
+    private func makeLockedColorLabel(signal: String) -> NSTextField {
+        let label = NSTextField(labelWithString: semanticColorName(for: signal))
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = semanticColor(for: signal)
+        label.alignment = .center
+        label.lineBreakMode = .byTruncatingTail
+        label.toolTip = "颜色由状态优先级锁定，避免高风险状态被误显示为低风险颜色。"
+        label.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        return label
     }
 
     private func makePopup(width: CGFloat) -> NSPopUpButton {
@@ -247,9 +250,6 @@ final class StatusRulesSettingsViewController: NSViewController {
     }
 
     @objc private func ruleChanged(_ sender: NSPopUpButton) {
-        if let row = ruleRows.first(where: { $0.modePopup === sender }) {
-            syncColorAvailability(for: row)
-        }
         rebuildRulesFromUI()
     }
 
@@ -258,14 +258,17 @@ final class StatusRulesSettingsViewController: NSViewController {
               let row = ruleRows.first(where: { $0.signal == signal }) else {
             return
         }
-        row.colorPopup.selectItem(at: 0)
         row.modePopup.selectItem(at: 0)
         rebuildRulesFromUI()
     }
 
     @objc private func resetAllRules() {
+        guard confirmSettingsAction(
+            title: "恢复全部默认灯效？",
+            message: "所有自定义动画模式将被清除，颜色语义不会改变。",
+            actionTitle: "全部恢复"
+        ) else { return }
         for row in ruleRows {
-            row.colorPopup.selectItem(at: 0)
             row.modePopup.selectItem(at: 0)
         }
         rebuildRulesFromUI()
@@ -274,10 +277,10 @@ final class StatusRulesSettingsViewController: NSViewController {
     private func rebuildRulesFromUI() {
         var newRules: [String: SignalRuleConfig] = [:]
         for row in ruleRows {
-            let mode = modeValues[row.modePopup.indexOfSelectedItem]
-            let color = mode == "off" ? nil : colorValues[row.colorPopup.indexOfSelectedItem]
-            if color != nil || mode != nil {
-                newRules[row.signal] = SignalRuleConfig(color: color, mode: mode)
+            let values = modeValues(for: row.signal)
+            let mode = values[row.modePopup.indexOfSelectedItem]
+            if mode != nil {
+                newRules[row.signal] = SignalRuleConfig(color: nil, mode: mode)
             }
         }
 
@@ -298,15 +301,6 @@ final class StatusRulesSettingsViewController: NSViewController {
             row.resetButton.isEnabled = rule != nil
             row.appearanceLabel.stringValue = appearanceText(signal: row.signal, rule: rule)
             row.previewView.frameState = previewFrame(signal: row.signal, rule: rule)
-            syncColorAvailability(for: row)
-        }
-    }
-
-    private func syncColorAvailability(for row: RuleRow) {
-        let mode = modeValues[row.modePopup.indexOfSelectedItem]
-        row.colorPopup.isEnabled = mode != "off"
-        if mode == "off" {
-            row.colorPopup.selectItem(at: 0)
         }
     }
 
@@ -318,14 +312,25 @@ final class StatusRulesSettingsViewController: NSViewController {
         }
     }
 
-    private func colorTitles(for signal: String) -> [String] {
-        let defaultText = defaultAppearance(signal: signal).color ?? "关闭"
-        return ["默认: \(defaultText)", "绿灯", "黄灯", "红灯"]
-    }
-
     private func modeTitles(for signal: String) -> [String] {
         let defaultText = defaultAppearance(signal: signal).mode
-        return ["默认: \(defaultText)", "关闭", "常亮", "闪烁", "脉冲"]
+        return modeValues(for: signal).map { mode in
+            switch mode {
+            case nil: return "默认: \(defaultText)"
+            case "off": return "关闭"
+            case "steady": return "常亮"
+            case "flash": return "闪烁"
+            case "workPulse": return "工作脉冲"
+            case "slowPulse": return "慢呼吸"
+            case "doubleFlash": return "双闪"
+            default: return mode ?? defaultText
+            }
+        }
+    }
+
+    private func modeValues(for signal: String) -> [String?] {
+        let visibleModes: [String?] = [nil, "steady", "flash", "workPulse", "slowPulse", "doubleFlash"]
+        return signal == "done" || signal == "off" ? [nil, "off"] + Array(visibleModes.dropFirst()) : visibleModes
     }
 
     private func appearanceText(signal: String, rule: SignalRuleConfig?) -> String {
@@ -369,6 +374,10 @@ final class StatusRulesSettingsViewController: NSViewController {
             return (describe(color), "闪烁")
         case .workPulse(let color):
             return (describe(color), "脉冲")
+        case .slowPulse(let color):
+            return (describe(color), "慢呼吸")
+        case .doubleFlash(let color):
+            return (describe(color), "双闪")
         }
     }
 
@@ -412,6 +421,8 @@ final class StatusRulesSettingsViewController: NSViewController {
             return "工具完成"
         case "attention":
             return "等待查看"
+        case "stale":
+            return "状态失联"
         case "permission":
             return "请求授权"
         case "blocked":
@@ -426,6 +437,32 @@ final class StatusRulesSettingsViewController: NSViewController {
             return "关闭"
         default:
             return signal
+        }
+    }
+
+    private func semanticColorName(for signal: String) -> String {
+        switch signal {
+        case "attention", "stale":
+            return "黄灯锁定"
+        case "permission", "blocked":
+            return "红灯锁定"
+        case "off":
+            return "关闭"
+        default:
+            return "绿灯锁定"
+        }
+    }
+
+    private func semanticColor(for signal: String) -> NSColor {
+        switch signal {
+        case "attention", "stale":
+            return .systemYellow
+        case "permission", "blocked":
+            return .systemRed
+        case "off":
+            return .secondaryLabelColor
+        default:
+            return .systemGreen
         }
     }
 }

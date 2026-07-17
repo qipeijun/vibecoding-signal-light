@@ -2,8 +2,10 @@ import AppKit
 import SignalLightShared
 
 final class SettingsTabViewController: NSViewController {
-    private enum Section: Int, CaseIterable {
-        case info
+    static let statusCenterContentSize = NSSize(width: 680, height: 570)
+    private static let settingsContentSize = NSSize(width: 680, height: 540)
+
+    private enum SettingsSection: Int, CaseIterable {
         case display
         case agent
         case rules
@@ -12,9 +14,8 @@ final class SettingsTabViewController: NSViewController {
 
         var title: String {
             switch self {
-            case .info: return "信息"
             case .display: return "显示"
-            case .agent: return "Agent"
+            case .agent: return "Codex"
             case .rules: return "规则"
             case .diagnostics: return "诊断"
             case .about: return "关于"
@@ -23,9 +24,8 @@ final class SettingsTabViewController: NSViewController {
 
         var heading: String {
             switch self {
-            case .info: return "当前状态"
             case .display: return "悬浮窗与状态栏"
-            case .agent: return "Agent 集成"
+            case .agent: return "Codex 集成"
             case .rules: return "状态灯规则"
             case .diagnostics: return "配置诊断"
             case .about: return "关于 Signal Light"
@@ -34,16 +34,14 @@ final class SettingsTabViewController: NSViewController {
 
         var subtitle: String {
             switch self {
-            case .info:
-                return "查看最近一次 Agent 状态，以及它来自哪个应用和模型。"
             case .display:
                 return "控制悬浮窗、透明度、动画速度、Dock 和 Touch Bar。"
             case .agent:
-                return "配置状态目录、会话超时、登录启动和会话清理。"
+                return "配置状态目录、分级租约、登录启动和会话清理。"
             case .rules:
-                return "为 11 个已知状态指定颜色与闪烁方式。"
+                return "12 个状态使用固定颜色语义，可调整动画方式。"
             case .diagnostics:
-                return "检查配置文件、状态目录和修复写入问题。"
+                return "检查配置文件、状态目录和 Codex Hook。"
             case .about:
                 return "版本、项目主页和应用说明。"
             }
@@ -53,8 +51,13 @@ final class SettingsTabViewController: NSViewController {
     private let configStore: SignalLightConfigStore
     private var currentConfig: SignalLightConfig
     private var stateStore: SignalStateStore
+    private let threadCatalog: CodexThreadCatalog
+    private let onOpenSession: (String?, SessionSource?) -> Void
+    private let titleLabel = NSTextField(labelWithString: "Signal Light")
+    private let backButton = NSButton()
+    private let settingsButton = NSButton()
     private let segmentedControl = NSSegmentedControl(
-        labels: Section.allCases.map(\.title),
+        labels: SettingsSection.allCases.map(\.title),
         trackingMode: .selectOne,
         target: nil,
         action: nil
@@ -63,13 +66,22 @@ final class SettingsTabViewController: NSViewController {
     private let subtitleLabel = NSTextField(labelWithString: "")
     private let contentContainer = NSView()
     private var currentChild: NSViewController?
+    private var currentFrameState = SignalFrame(green: 1, yellow: 0, red: 0)
 
-    init(configStore: SignalLightConfigStore, config: SignalLightConfig, stateStore: SignalStateStore) {
+    init(
+        configStore: SignalLightConfigStore,
+        config: SignalLightConfig,
+        stateStore: SignalStateStore,
+        threadCatalog: CodexThreadCatalog = CodexThreadCatalog(),
+        onOpenSession: @escaping (String?, SessionSource?) -> Void = { _, _ in }
+    ) {
         self.configStore = configStore
         self.currentConfig = config
         self.stateStore = stateStore
+        self.threadCatalog = threadCatalog
+        self.onOpenSession = onOpenSession
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: 680, height: 540)
+        preferredContentSize = Self.statusCenterContentSize
     }
 
     required init?(coder: NSCoder) {
@@ -83,50 +95,81 @@ final class SettingsTabViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         buildUI()
-        selectSection(.info)
+        showStatusCenter()
     }
 
-    func refreshRuntimeStatus(config: SignalLightConfig, stateStore: SignalStateStore) {
+    func refreshRuntimeStatus(config: SignalLightConfig, stateStore: SignalStateStore, frameState: SignalFrame) {
         currentConfig = config
         self.stateStore = stateStore
-        (currentChild as? StatusInfoViewController)?.update(config: config, stateStore: stateStore)
+        currentFrameState = frameState
+        (currentChild as? StatusInfoViewController)?.update(
+            config: config,
+            stateStore: stateStore,
+            frameState: frameState
+        )
+    }
+
+    /// 高频动画刷新只更新灯泡帧，避免重复计算会话、历史和状态文案。
+    func updateAnimationFrame(_ frameState: SignalFrame) {
+        currentFrameState = frameState
+        (currentChild as? StatusInfoViewController)?.updateAnimationFrame(frameState)
     }
 
     private func buildUI() {
         let root = NSStackView()
         root.orientation = .vertical
-        root.spacing = 12
-        root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 14, right: 18)
-
-        let header = NSStackView()
-        header.orientation = .vertical
-        header.spacing = 6
+        root.spacing = 10
+        root.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
 
         let topRow = NSStackView()
         topRow.orientation = .horizontal
         topRow.spacing = 10
         topRow.alignment = .centerY
 
-        headingLabel.font = NSFont.boldSystemFont(ofSize: 17)
+        configureIconButton(
+            backButton,
+            symbolName: "chevron.left",
+            toolTip: "返回状态中心",
+            action: #selector(showStatusCenterAction)
+        )
+        backButton.isHidden = true
+
+        titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.textColor = .secondaryLabelColor
+
+        segmentedControl.segmentStyle = .rounded
+        segmentedControl.selectedSegment = SettingsSection.display.rawValue
+        segmentedControl.target = self
+        segmentedControl.action = #selector(sectionChanged(_:))
+        segmentedControl.isHidden = true
+        for section in SettingsSection.allCases {
+            segmentedControl.setWidth(84, forSegment: section.rawValue)
+        }
+
+        configureIconButton(
+            settingsButton,
+            symbolName: "gearshape",
+            toolTip: "打开设置",
+            action: #selector(showSettingsAction)
+        )
+
+        topRow.addArrangedSubview(backButton)
+        topRow.addArrangedSubview(titleLabel)
+        topRow.addArrangedSubview(NSView())
+        topRow.addArrangedSubview(segmentedControl)
+        topRow.addArrangedSubview(settingsButton)
+        root.addArrangedSubview(topRow)
+
+        headingLabel.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
+        headingLabel.isHidden = true
+        root.addArrangedSubview(headingLabel)
+
         subtitleLabel.font = NSFont.systemFont(ofSize: 12)
         subtitleLabel.textColor = .secondaryLabelColor
         subtitleLabel.lineBreakMode = .byWordWrapping
         subtitleLabel.maximumNumberOfLines = 2
-
-        segmentedControl.segmentStyle = .rounded
-        segmentedControl.selectedSegment = Section.info.rawValue
-        segmentedControl.target = self
-        segmentedControl.action = #selector(sectionChanged(_:))
-        for section in Section.allCases {
-            segmentedControl.setWidth(88, forSegment: section.rawValue)
-        }
-
-        topRow.addArrangedSubview(segmentedControl)
-        topRow.addArrangedSubview(NSView())
-        header.addArrangedSubview(topRow)
-        header.addArrangedSubview(headingLabel)
-        header.addArrangedSubview(subtitleLabel)
-        root.addArrangedSubview(header)
+        subtitleLabel.isHidden = true
+        root.addArrangedSubview(subtitleLabel)
         root.addArrangedSubview(makeSeparator())
 
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -143,26 +186,71 @@ final class SettingsTabViewController: NSViewController {
         ])
     }
 
-    @objc private func sectionChanged(_ sender: NSSegmentedControl) {
-        guard let section = Section(rawValue: sender.selectedSegment) else {
-            return
-        }
-        selectSection(section)
+    private func configureIconButton(
+        _ button: NSButton,
+        symbolName: String,
+        toolTip: String,
+        action: Selector
+    ) {
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: toolTip)
+        button.imagePosition = .imageOnly
+        button.bezelStyle = .texturedRounded
+        button.controlSize = .small
+        button.toolTip = toolTip
+        button.target = self
+        button.action = action
+        button.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        button.setAccessibilityLabel(toolTip)
     }
 
-    private func selectSection(_ section: Section) {
+    @objc private func showStatusCenterAction() {
+        showStatusCenter()
+    }
+
+    @objc private func showSettingsAction() {
+        showSettings(.display)
+    }
+
+    @objc private func sectionChanged(_ sender: NSSegmentedControl) {
+        guard let section = SettingsSection(rawValue: sender.selectedSegment) else {
+            return
+        }
+        showSettings(section)
+    }
+
+    private func showStatusCenter() {
+        preferredContentSize = Self.statusCenterContentSize
+        backButton.isHidden = true
+        settingsButton.isHidden = false
+        segmentedControl.isHidden = true
+        headingLabel.isHidden = true
+        subtitleLabel.isHidden = true
+
+        let statusController = StatusInfoViewController(
+            configStore: configStore,
+            config: currentConfig,
+            stateStore: stateStore,
+            threadCatalog: threadCatalog,
+            onOpenDiagnostics: { [weak self] in self?.showSettings(.diagnostics) },
+            onOpenSession: onOpenSession
+        )
+        replaceContent(with: statusController)
+        statusController.update(config: currentConfig, stateStore: stateStore, frameState: currentFrameState)
+    }
+
+    private func showSettings(_ section: SettingsSection) {
+        preferredContentSize = Self.settingsContentSize
+        backButton.isHidden = false
+        settingsButton.isHidden = true
+        segmentedControl.isHidden = false
         segmentedControl.selectedSegment = section.rawValue
         headingLabel.stringValue = section.heading
         subtitleLabel.stringValue = section.subtitle
+        headingLabel.isHidden = false
+        subtitleLabel.isHidden = false
 
         let child: NSViewController
         switch section {
-        case .info:
-            child = StatusInfoViewController(
-                configStore: configStore,
-                config: currentConfig,
-                stateStore: stateStore
-            )
         case .display:
             child = DisplaySettingsViewController(
                 config: currentConfig.display,

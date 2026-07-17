@@ -1,107 +1,119 @@
 [
   {
     "name": "empty sessions return idle",
+    "now": 100,
     "sessions": {},
     "expected_aggregate": "idle"
   },
   {
-    "name": "latest working beats older attention",
+    "name": "older attention outranks newer working",
+    "now": 100,
     "sessions": {
-      "a": {
-        "signal": "attention",
-        "updated_at": 1
-      },
-      "b": {
-        "signal": "working",
-        "updated_at": 2
-      }
+      "attention": { "signal": "attention", "updated_at": 80 },
+      "working": { "signal": "working", "updated_at": 90 }
     },
-    "expected_aggregate": "working"
+    "expected_aggregate": "attention"
   },
   {
-    "name": "stale red warning does not override newer working",
+    "name": "older blocked outranks newer permission",
+    "now": 100,
     "sessions": {
-      "a": {
-        "signal": "attention",
-        "updated_at": 1
-      },
-      "b": {
-        "signal": "working",
-        "updated_at": 2
-      },
-      "c": {
-        "signal": "permission",
-        "updated_at": 0
-      }
+      "blocked": { "signal": "blocked", "updated_at": 70 },
+      "permission": { "signal": "permission", "updated_at": 90 }
     },
-    "expected_aggregate": "working"
+    "expected_aggregate": "blocked"
   },
   {
-    "name": "latest tool done maps to working",
+    "name": "permission outranks attention",
+    "now": 100,
     "sessions": {
-      "a": {
-        "signal": "idle",
-        "updated_at": 1
-      },
-      "b": {
-        "signal": "tool_done",
-        "updated_at": 2
-      }
-    },
-    "expected_aggregate": "working"
-  },
-  {
-    "name": "latest done maps to idle",
-    "sessions": {
-      "a": {
-        "signal": "done",
-        "updated_at": 1
-      }
-    },
-    "expected_aggregate": "idle"
-  },
-  {
-    "name": "latest blocked maps to permission",
-    "sessions": {
-      "a": {
-        "signal": "working",
-        "updated_at": 1
-      },
-      "b": {
-        "signal": "blocked",
-        "updated_at": 2
-      }
+      "attention": { "signal": "attention", "updated_at": 90 },
+      "permission": { "signal": "permission", "updated_at": 80 }
     },
     "expected_aggregate": "permission"
   },
   {
-    "name": "unknown latest signal falls back to idle",
+    "name": "working outranks done",
+    "now": 100,
     "sessions": {
-      "a": {
-        "signal": "working",
-        "updated_at": 1
-      },
-      "b": {
-        "signal": "mystery",
-        "updated_at": 2
-      }
+      "done": { "signal": "done", "updated_at": 99 },
+      "working": { "signal": "tool_done", "updated_at": 90 }
+    },
+    "expected_aggregate": "working"
+  },
+  {
+    "name": "fresh done remains visible",
+    "now": 100,
+    "sessions": {
+      "done": { "signal": "done", "updated_at": 95 }
+    },
+    "expected_aggregate": "done"
+  },
+  {
+    "name": "done returns to idle after six seconds",
+    "now": 100,
+    "sessions": {
+      "done": { "signal": "done", "updated_at": 93 }
     },
     "expected_aggregate": "idle"
   },
   {
-    "name": "expired warning is pruned before aggregation",
-    "now": 100,
+    "name": "working lease expiry becomes stale",
+    "now": 2000,
+    "sessions": {
+      "working": { "signal": "working", "updated_at": 100 }
+    },
+    "expected_aggregate": "stale"
+  },
+  {
+    "name": "attention lease expiry becomes stale",
+    "now": 7301,
+    "sessions": {
+      "attention": { "signal": "attention", "updated_at": 100 }
+    },
+    "expected_aggregate": "stale"
+  },
+  {
+    "name": "critical lease expiry becomes stale",
+    "now": 86501,
+    "sessions": {
+      "blocked": { "signal": "blocked", "updated_at": 100 }
+    },
+    "expected_aggregate": "stale"
+  },
+  {
+    "name": "expired critical state remains yellow over fresh work",
+    "now": 90000,
+    "sessions": {
+      "blocked": { "signal": "blocked", "updated_at": 100 },
+      "working": { "signal": "working", "updated_at": 89990 }
+    },
+    "expected_aggregate": "stale"
+  },
+  {
+    "name": "expired work is stale even with idle record",
+    "now": 2000,
+    "sessions": {
+      "working": { "signal": "working", "updated_at": 100 },
+      "idle": { "signal": "idle", "updated_at": 1990 }
+    },
+    "expected_aggregate": "stale"
+  },
+  {
+    "name": "record beyond lease and retention is pruned",
+    "now": 90000,
     "session_ttl_seconds": 10,
     "sessions": {
-      "a": {
-        "signal": "permission",
-        "updated_at": 1
-      },
-      "b": {
-        "signal": "working",
-        "updated_at": 95
-      }
+      "blocked": { "signal": "blocked", "updated_at": 100 }
     },
-    "expected_aggregate": "working"
+    "expected_aggregate": "idle"
+  },
+  {
+    "name": "unknown signal falls back to idle",
+    "now": 100,
+    "sessions": {
+      "unknown": { "signal": "mystery", "updated_at": 99 }
+    },
+    "expected_aggregate": "idle"
   }
 ]

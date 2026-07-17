@@ -13,4 +13,15 @@ extension NSViewController {
             alert.runModal()
         }
     }
+
+    /// 对清空、重建和恢复默认等不可撤销操作进行统一确认。
+    func confirmSettingsAction(title: String, message: String, actionTitle: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: actionTitle)
+        return alert.runModal() == .alertSecondButtonReturn
+    }
 }

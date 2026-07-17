@@ -66,10 +66,10 @@ final class DisplaySettingsViewController: NSViewController {
         stack.addArrangedSubview(opacityLabel)
         stack.addArrangedSubview(opacitySlider)
 
-        let speedLabel = NSTextField(labelWithString: "动画速度: \(String(format: "%.2fx", displayConfig.animationSpeed))")
-        let speedSlider = makeSlider(value: displayConfig.animationSpeed, min: 0.25, max: 4.0) { [weak self, weak speedLabel] value in
+        let speedLabel = NSTextField(labelWithString: "环境动画速度: \(String(format: "%.2fx", displayConfig.animationSpeed))")
+        let speedSlider = makeSlider(value: min(displayConfig.animationSpeed, 1.0), min: 0.25, max: 1.0) { [weak self, weak speedLabel] value in
             self?.displayConfig.animationSpeed = value
-            speedLabel?.stringValue = "动画速度: \(String(format: "%.2fx", value))"
+            speedLabel?.stringValue = "环境动画速度: \(String(format: "%.2fx", value))"
             self?.notify()
         }
         stack.addArrangedSubview(speedLabel)
@@ -121,6 +121,11 @@ final class DisplaySettingsViewController: NSViewController {
     }
 
     @objc private func resetDisplaySettings() {
+        guard confirmSettingsAction(
+            title: "恢复默认显示设置？",
+            message: "悬浮窗显示、置顶、尺寸、透明度、动画速度、Dock 和 Touch Bar 设置将恢复默认值。",
+            actionTitle: "恢复默认"
+        ) else { return }
         displayConfig = .default
         notify()
         view.subviews.forEach { $0.removeFromSuperview() }

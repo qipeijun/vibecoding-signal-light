@@ -75,10 +75,7 @@ public final class SignalLightConfigStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(config)
-        let tmpURL = configFile.appendingPathExtension("tmp")
-        try data.write(to: tmpURL, options: .atomic)
-        try? FileManager.default.removeItem(at: configFile)
-        try FileManager.default.moveItem(at: tmpURL, to: configFile)
+        try data.write(to: configFile, options: .atomic)
     }
 
     // MARK: - 环境变量覆盖
@@ -89,12 +86,24 @@ public final class SignalLightConfigStore {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> AgentConfig {
         var agent = config.agent
-        if let envDir = environment["SIGNAL_LIGHT_STATE_DIR"] {
+        if let envDir = environment["SIGNAL_LIGHT_STATE_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !envDir.isEmpty {
             agent.stateDirectory = envDir
         }
-        if let envTTL = environment["SIGNAL_LIGHT_SESSION_TTL_SECONDS"],
-           let ttl = Double(envTTL) {
-            agent.sessionTTLSeconds = ttl
+        if let value = validatedNumber(environment["SIGNAL_LIGHT_SESSION_TTL_SECONDS"], range: 1...604800) {
+            agent.sessionTTLSeconds = value
+        }
+        if let value = validatedNumber(environment["SIGNAL_LIGHT_WORKING_LEASE_SECONDS"], range: 60...604800) {
+            agent.workingLeaseSeconds = value
+        }
+        if let value = validatedNumber(environment["SIGNAL_LIGHT_ATTENTION_LEASE_SECONDS"], range: 60...604800) {
+            agent.attentionLeaseSeconds = value
+        }
+        if let value = validatedNumber(environment["SIGNAL_LIGHT_CRITICAL_LEASE_SECONDS"], range: 60...604800) {
+            agent.criticalLeaseSeconds = value
+        }
+        if let value = validatedNumber(environment["SIGNAL_LIGHT_DONE_DISPLAY_SECONDS"], range: 1...30) {
+            agent.doneDisplaySeconds = value
         }
         return agent
     }
@@ -152,11 +161,16 @@ public final class SignalLightConfigStore {
             }
 
             var cleanRule = rule
-            if let color = cleanRule.color, !SignalRuleConfig.validColors.contains(color) {
+            // 颜色代表固定状态语义；旧配置可解码，但保存时必须移除自定义颜色。
+            if cleanRule.color != nil {
                 cleanRule.color = nil
                 changed = true
             }
             if let mode = cleanRule.mode, !SignalRuleConfig.validModes.contains(mode) {
+                cleanRule.mode = nil
+                changed = true
+            }
+            if cleanRule.mode == "off", signal != "done", signal != "off" {
                 cleanRule.mode = nil
                 changed = true
             }
@@ -223,7 +237,7 @@ private struct RawDisplayConfig: Decodable {
             alwaysOnTop: alwaysOnTop ?? defaults.alwaysOnTop,
             windowScale: windowScale ?? defaults.windowScale,
             opacity: opacity ?? defaults.opacity,
-            animationSpeed: animationSpeed ?? defaults.animationSpeed,
+            animationSpeed: validatedNumber(animationSpeed, fallback: defaults.animationSpeed, range: 0.25...1.0),
             showDockIcon: showDockIcon ?? defaults.showDockIcon,
             showTouchBar: showTouchBar ?? defaults.showTouchBar
         )
@@ -233,16 +247,43 @@ private struct RawDisplayConfig: Decodable {
 private struct RawAgentConfig: Decodable {
     let stateDirectory: String?
     let sessionTTLSeconds: Double?
+    let workingLeaseSeconds: Double?
+    let attentionLeaseSeconds: Double?
+    let criticalLeaseSeconds: Double?
+    let doneDisplaySeconds: Double?
     let launchAtLogin: Bool?
 
     func mergedWithDefaults() -> AgentConfig {
         let defaults = AgentConfig.default
         return AgentConfig(
-            stateDirectory: stateDirectory ?? defaults.stateDirectory,
-            sessionTTLSeconds: sessionTTLSeconds ?? defaults.sessionTTLSeconds,
+            stateDirectory: stateDirectory?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+                ?? defaults.stateDirectory,
+            sessionTTLSeconds: validatedNumber(sessionTTLSeconds, fallback: defaults.sessionTTLSeconds, range: 1...604800),
+            workingLeaseSeconds: validatedNumber(workingLeaseSeconds, fallback: defaults.workingLeaseSeconds, range: 60...604800),
+            attentionLeaseSeconds: validatedNumber(attentionLeaseSeconds, fallback: defaults.attentionLeaseSeconds, range: 60...604800),
+            criticalLeaseSeconds: validatedNumber(criticalLeaseSeconds, fallback: defaults.criticalLeaseSeconds, range: 60...604800),
+            doneDisplaySeconds: validatedNumber(doneDisplaySeconds, fallback: defaults.doneDisplaySeconds, range: 1...30),
             launchAtLogin: launchAtLogin ?? defaults.launchAtLogin
         )
     }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+private func validatedNumber(_ raw: String?, range: ClosedRange<Double>) -> Double? {
+    guard let raw, let value = Double(raw), value.isFinite, range.contains(value) else {
+        return nil
+    }
+    return value
+}
+
+private func validatedNumber(_ value: Double?, fallback: Double, range: ClosedRange<Double>) -> Double {
+    guard let value, value.isFinite, range.contains(value) else {
+        return fallback
+    }
+    return value
 }
 
 private struct RawStatusRulesConfig: Decodable {

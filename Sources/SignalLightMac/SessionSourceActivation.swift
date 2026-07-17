@@ -7,15 +7,16 @@ enum SessionSourceActivation {
         in sessions: [String: SessionRecord],
         aggregate: SignalState,
         sessionTTL: Double,
+        leasePolicy: SignalLeasePolicy,
         now: Double = Date().timeIntervalSince1970
     ) -> SessionSource? {
-        let candidates = sessions.values.filter { record in
-            record.source != nil
-                && !sessionEndSignals.contains(record.signal)
-                && now - record.updatedAt <= sessionTTL
-        }
-
-        return candidates.max { $0.updatedAt < $1.updatedAt }?.source
+        preferredSessionSource(
+            in: sessions,
+            aggregate: aggregate,
+            sessionTTL: sessionTTL,
+            leasePolicy: leasePolicy,
+            now: now
+        )
     }
 
     static func activate(_ source: SessionSource) {

@@ -111,20 +111,43 @@ def _state(
 
 def _flash(green: bool = False, yellow: bool = False, red: bool = False) -> tuple[Frame, Frame]:
     return (
-        Frame(green=green, yellow=yellow, red=red, seconds=0.12),
-        Frame(seconds=0.10),
-    )
-
-
-def _slow_flash(green: bool = False, yellow: bool = False, red: bool = False) -> tuple[Frame, Frame]:
-    return (
-        Frame(green=green, yellow=yellow, red=red, seconds=0.55),
-        Frame(seconds=0.35),
+        Frame(green=green, yellow=yellow, red=red, seconds=0.30),
+        Frame(seconds=0.70),
     )
 
 
 def _work_pulse() -> tuple[Frame, ...]:
-    return _slow_flash(green=True)
+    return _pulse(green=True, period=2.0)
+
+
+def _pulse(
+    *,
+    green: bool = False,
+    yellow: bool = False,
+    red: bool = False,
+    period: float,
+) -> tuple[Frame, ...]:
+    # 从峰值开始，按余弦呼吸曲线取样；25% 谷值避免长期状态看起来像熄灭。
+    brightness_levels = (1.0, 0.93, 0.74, 0.48, 0.32, 0.25, 0.32, 0.48, 0.74, 0.93)
+    return tuple(
+        Frame(
+            green=green,
+            yellow=yellow,
+            red=red,
+            seconds=period / len(brightness_levels),
+            brightness=brightness,
+        )
+        for brightness in brightness_levels
+    )
+
+
+def _double_flash(*, green: bool = False, red: bool = False) -> tuple[Frame, ...]:
+    return (
+        Frame(green=green, red=red, seconds=0.18),
+        Frame(seconds=0.18),
+        Frame(green=green, red=red, seconds=0.18),
+        Frame(seconds=1.46),
+    )
 
 
 SIGNALS: dict[str, AgentSignal] = {
@@ -168,15 +191,14 @@ SIGNALS: dict[str, AgentSignal] = {
         name="permission",
         summary="Codex 请求授权或需要你明确批准。",
         attention="需要立即关注。",
-        frames=_flash(red=True),
-        loops=12,
+        frames=_pulse(red=True, period=2.0),
         repeat=True,
     ),
     "blocked": AgentSignal(
         name="blocked",
         summary="Agent 遇到阻塞、失败或无法继续。",
         attention="需要你处理。",
-        frames=_flash(red=True),
+        frames=_double_flash(red=True),
         loops=12,
         repeat=True,
     ),
@@ -184,7 +206,7 @@ SIGNALS: dict[str, AgentSignal] = {
         name="done",
         summary="任务已完成。",
         attention="不需要关注。",
-        frames=_state(green=True)[0],
+        frames=_double_flash(green=True),
         leave_on=_state(green=True)[1],
     ),
     "session_start": AgentSignal(
@@ -200,6 +222,13 @@ SIGNALS: dict[str, AgentSignal] = {
         attention="不需要关注。",
         frames=_state(green=True)[0],
         leave_on=_state(green=True)[1],
+    ),
+    "stale": AgentSignal(
+        name="stale",
+        summary="最近状态已超过租约，当前真实状态无法确认。",
+        attention="建议检查 Agent 或 hook 是否仍在运行。",
+        frames=_pulse(yellow=True, period=2.8),
+        repeat=True,
     ),
     "off": AgentSignal(
         name="off",

@@ -16,31 +16,20 @@ final class SignalViewController: NSViewController, NSTouchBarDelegate {
     override func loadView() {
         let rootView = NSView(frame: signalView.frame)
         rootView.wantsLayer = true
-        rootView.layer?.cornerRadius = 11
-        rootView.layer?.cornerCurve = .continuous
-        rootView.layer?.masksToBounds = true
-
-        let visualEffect = NSVisualEffectView(frame: rootView.bounds.insetBy(dx: 5, dy: 5))
-        visualEffect.autoresizingMask = [.width, .height]
-        visualEffect.material = .hudWindow
-        visualEffect.blendingMode = .behindWindow
-        visualEffect.state = .active
-        visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = 11
-        visualEffect.layer?.cornerCurve = .continuous
-        visualEffect.layer?.masksToBounds = true
+        rootView.layer?.backgroundColor = NSColor.clear.cgColor
 
         signalView.frame = rootView.bounds
         signalView.autoresizingMask = [.width, .height]
 
-        rootView.addSubview(visualEffect)
         rootView.addSubview(signalView)
         view = rootView
     }
 
-    func update(frameState: SignalFrame) {
+    func update(frameState: SignalFrame, stateName: String) {
         signalView.frameState = frameState
+        signalView.stateName = stateName
         touchBarView?.frameState = frameState
+        touchBarView?.stateName = stateName
     }
 
     @available(macOS 10.12.2, *)
@@ -65,6 +54,7 @@ final class SignalViewController: NSViewController, NSTouchBarDelegate {
 
         let item = NSCustomTouchBarItem(identifier: identifier)
         let touchView = TouchBarSignalView(frame: NSRect(x: 0, y: 0, width: 132, height: 30))
+        touchView.stateName = signalView.stateName
         touchBarView = touchView
         item.view = touchView
         return item

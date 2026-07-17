@@ -51,11 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
     hook.add_argument("--event", dest="event_option", help="Codex hook event name")
     hook.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
 
-    cc_hook = subparsers.add_parser("claude-code-hook", help="read a Claude Code hook event and play the matching signal")
-    cc_hook.add_argument("event", nargs="?", help="Claude Code hook event name, for example Stop or PreToolUse")
-    cc_hook.add_argument("--event", dest="event_option", help="Claude Code hook event name")
-    cc_hook.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
-
     test = subparsers.add_parser("test", help="run a quick macOS UI status preview")
     test.add_argument("--dry-run", action="store_true", help="print light frames instead of writing macOS app state")
 
@@ -79,18 +74,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         signal = choose_signal(hook_input)
         key = session_key(hook_input, os.environ)
         model = model_name(hook_input, os.environ)
-        return play_hook_signal(signal, session_key=key, dry_run=args.dry_run, quiet=True, model_name=model)
-    if args.command == "claude-code-hook":
-        event = args.event_option or args.event
-        from signal_light.claude_code_hook import choose_signal as cc_choose_signal
-        from signal_light.claude_code_hook import model_name as cc_model_name
-        from signal_light.claude_code_hook import read_hook_input, session_key as cc_session_key
-
-        hook_argv = ["signal-light", "--event", event] if event else ["signal-light"]
-        hook_input = read_hook_input(hook_argv, sys.stdin.read())
-        signal = cc_choose_signal(hook_input)
-        key = cc_session_key(hook_input, os.environ)
-        model = cc_model_name(hook_input, os.environ)
         return play_hook_signal(signal, session_key=key, dry_run=args.dry_run, quiet=True, model_name=model)
     if args.command == "status":
         print(json.dumps(read_session_snapshot(), ensure_ascii=False, indent=2))

@@ -44,8 +44,6 @@ func run(args: [String], store: StateStore, configStore: SignalLightConfigStore)
         return 0
     case "codex-hook":
         return try runCodexHook(args: rest, store: store)
-    case "claude-code-hook":
-        return try runClaudeHook(args: rest, store: store)
     case "test":
         return try runPreview(store: store)
     case "app":
@@ -60,6 +58,14 @@ func run(args: [String], store: StateStore, configStore: SignalLightConfigStore)
         return try runDoctor(args: rest, store: store, configStore: configStore)
     case "install-hooks":
         return try runInstallHooks(args: rest)
+    case "migrate-codex-only":
+        return try runCodexOnlyMigration(args: rest)
+    case "cleanup-legacy-command":
+        return try runLegacyCommandCleanup(args: rest)
+#if DEBUG
+    case "_test-clean-state":
+        return try runTestStateCleanup(args: rest)
+#endif
     case "config":
         return try configCommand(args: rest, configStore: configStore)
     default:
@@ -79,7 +85,6 @@ private func runDoctor(args: [String], store: StateStore, configStore: SignalLig
         ("App 已安装", FileManager.default.fileExists(atPath: appPath), appPath),
         ("signal-light 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/signal-light"), "/usr/local/bin/signal-light"),
         ("Codex hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/codex-signal-hook"), "/usr/local/bin/codex-signal-hook"),
-        ("Claude hook 命令可执行", FileManager.default.isExecutableFile(atPath: "/usr/local/bin/claude-code-signal-hook"), "/usr/local/bin/claude-code-signal-hook"),
         ("配置文件存在", FileManager.default.fileExists(atPath: configFile.path), configFile.path),
         ("状态目录可写", directoryIsWritable(stateDir), stateDir.path),
     ]
@@ -90,9 +95,16 @@ private func runDoctor(args: [String], store: StateStore, configStore: SignalLig
         print("\(ok ? "OK" : "FAIL") \(title): \(detail)")
     }
 
-    for report in checkSignalLightHooks(homeDirectory: homeDirectory) {
-        if !report.ok { failed = true }
-        print("\(report.ok ? "OK" : "FAIL") \(report.title): \(report.message) (\(report.path))")
+    switch inspectCodexHookConnection(homeDirectory: homeDirectory, stateDirectory: stateDir) {
+    case .missingConfiguration(let message):
+        failed = true
+        print("FAIL Codex Hook: \(message)")
+    case .awaitingFirstEvent:
+        failed = true
+        print("WAIT Codex Hook: 已配置但尚无事件，请在 Codex /hooks 确认信任")
+    case .active(let lastEventAt):
+        let date = Date(timeIntervalSince1970: lastEventAt)
+        print("OK Codex Hook: 已收到事件 (\(date))")
     }
 
     print("config path: \(configFile.path)")
@@ -113,6 +125,44 @@ private func runInstallHooks(args: [String]) throws -> Int {
     }
     return 0
 }
+
+private func runCodexOnlyMigration(args: [String]) throws -> Int {
+    let homeDirectory = try homeDirectoryArgument(from: args) ?? FileManager.default.homeDirectoryForCurrentUser
+    if try removeLegacyClaudeHookConfiguration(homeDirectory: homeDirectory) {
+        print("已移除旧版 Signal Light Claude Hook。")
+    }
+    return 0
+}
+
+private func runLegacyCommandCleanup(args: [String]) throws -> Int {
+    let defaultPath = "/usr/local/bin/claude-code-signal-hook"
+    let path: String
+    if let index = args.firstIndex(of: "--path") {
+        let valueIndex = args.index(after: index)
+        guard valueIndex < args.endIndex else {
+            throw SignalCLIError.message("--path requires a path")
+        }
+        path = args[valueIndex]
+    } else {
+        path = defaultPath
+    }
+
+    if try SignalLightInstallLifecycle.removeOwnedLegacyClaudeCommand(at: URL(fileURLWithPath: path)) {
+        print("已移除旧版 Signal Light Claude 命令。")
+    }
+    return 0
+}
+
+#if DEBUG
+/// 仅用于隔离 E2E，Release 二进制不包含该入口。
+private func runTestStateCleanup(args: [String]) throws -> Int {
+    guard let path = args.first else {
+        throw SignalCLIError.message("_test-clean-state requires a path")
+    }
+    try SignalLightInstallLifecycle.removeOwnedStateFiles(in: URL(fileURLWithPath: path, isDirectory: true))
+    return 0
+}
+#endif
 
 private func homeDirectoryArgument(from args: [String]) throws -> URL? {
     guard let index = args.firstIndex(of: "--home") else {
@@ -169,30 +219,10 @@ private func runCodexHook(args: [String], store: StateStore) throws -> Int {
     _ = try store.applySessionSignal(
         sessionKey: key,
         signalName: signal,
-        source: currentSessionSource(preference: .codex),
+        source: currentCodexSessionSource(),
         model: modelName(payload: payload, environment: ProcessInfo.processInfo.environment)
     )
-    return 0
-}
-
-private func runClaudeHook(args: [String], store: StateStore) throws -> Int {
-    let stdinText = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    let payload = readPayload(stdinText: stdinText)
-    let event = eventFromArgs(args, payload: payload, keys: ["event", "hook_event_name"], fallback: "Stop")
-    let signal = chooseClaudeSignal(eventName: event, payload: payload)
-    let key = claudeSessionKey(payload: payload, environment: ProcessInfo.processInfo.environment)
-
-    if args.contains("--dry-run") {
-        print("Session \(key): \(signal)")
-        return 0
-    }
-
-    _ = try store.applySessionSignal(
-        sessionKey: key,
-        signalName: signal,
-        source: currentSessionSource(preference: .claudeCode, payload: payload),
-        model: modelName(payload: payload, environment: ProcessInfo.processInfo.environment)
-    )
+    try SignalLightStateFiles.writeCodexHookActivity(in: store.stateDir)
     return 0
 }
 
@@ -261,7 +291,7 @@ private func configCommand(args: [String], configStore: SignalLightConfigStore) 
 }
 
 private func printHelp() {
-    print("Usage: signal-light <list|play|status|version|codex-hook|claude-code-hook|test|app|doctor|install-hooks|config|quit|uninstall>")
+    print("Usage: signal-light <list|play|status|version|codex-hook|test|app|doctor|install-hooks|config|quit|uninstall>")
     print("       signal-light doctor [--home <path>]")
     print("       signal-light install-hooks [--home <path>] [--quiet]")
 }

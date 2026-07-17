@@ -33,7 +33,7 @@ public struct DisplayConfig: Codable, Equatable {
     public var windowScale: Double
     /// 不透明度（0.0-1.0）
     public var opacity: Double
-    /// 动画速度（1.0 = 默认 tick 频率）
+    /// 环境状态动画速度倍率（1.0 = 默认周期，不影响授权、阻塞等行动提示）
     public var animationSpeed: Double
     /// 显示 Dock 图标（需重启生效）
     public var showDockIcon: Bool
@@ -74,19 +74,52 @@ public struct AgentConfig: Codable, Equatable {
     public var stateDirectory: String
     /// 会话超时（秒）
     public var sessionTTLSeconds: Double
+    /// 工作状态租约（秒），超时后显示 stale。
+    public var workingLeaseSeconds: Double
+    /// 等待关注状态租约（秒），超时后显示 stale。
+    public var attentionLeaseSeconds: Double
+    /// 授权与阻塞状态租约（秒），超时后显示 stale。
+    public var criticalLeaseSeconds: Double
+    /// 完成状态展示时长（秒），超时后回到 idle。
+    public var doneDisplaySeconds: Double
     /// 登录时启动
     public var launchAtLogin: Bool
 
     public static let `default` = AgentConfig(
         stateDirectory: "/private/tmp/signal-light",
         sessionTTLSeconds: 86400,
+        workingLeaseSeconds: 1800,
+        attentionLeaseSeconds: 7200,
+        criticalLeaseSeconds: 86400,
+        doneDisplaySeconds: 6,
         launchAtLogin: true
     )
 
-    public init(stateDirectory: String, sessionTTLSeconds: Double, launchAtLogin: Bool) {
+    public init(
+        stateDirectory: String,
+        sessionTTLSeconds: Double,
+        workingLeaseSeconds: Double = 1800,
+        attentionLeaseSeconds: Double = 7200,
+        criticalLeaseSeconds: Double = 86400,
+        doneDisplaySeconds: Double = 6,
+        launchAtLogin: Bool
+    ) {
         self.stateDirectory = stateDirectory
         self.sessionTTLSeconds = sessionTTLSeconds
+        self.workingLeaseSeconds = workingLeaseSeconds
+        self.attentionLeaseSeconds = attentionLeaseSeconds
+        self.criticalLeaseSeconds = criticalLeaseSeconds
+        self.doneDisplaySeconds = doneDisplaySeconds
         self.launchAtLogin = launchAtLogin
+    }
+
+    public var leasePolicy: SignalLeasePolicy {
+        SignalLeasePolicy(
+            workingSeconds: workingLeaseSeconds,
+            attentionSeconds: attentionLeaseSeconds,
+            criticalSeconds: criticalLeaseSeconds,
+            doneSeconds: doneDisplaySeconds
+        )
     }
 }
 
@@ -102,13 +135,13 @@ public struct StatusRulesConfig: Codable, Equatable {
 }
 
 public struct SignalRuleConfig: Codable, Equatable {
-    /// nil = 使用默认颜色
+    /// 旧配置兼容字段。颜色语义已锁定，加载后会被清理为 nil。
     public var color: String?
     /// nil = 使用默认模式
     public var mode: String?
 
     public static let validColors: Set<String> = ["green", "yellow", "red"]
-    public static let validModes: Set<String> = ["off", "steady", "flash", "workPulse"]
+    public static let validModes: Set<String> = ["off", "steady", "flash", "workPulse", "slowPulse", "doubleFlash"]
 
     public init(color: String? = nil, mode: String? = nil) {
         self.color = color
@@ -116,8 +149,7 @@ public struct SignalRuleConfig: Codable, Equatable {
     }
 
     public var isValid: Bool {
-        let colorIsValid = color.map { Self.validColors.contains($0) } ?? true
         let modeIsValid = mode.map { Self.validModes.contains($0) } ?? true
-        return colorIsValid && modeIsValid
+        return color == nil && modeIsValid
     }
 }

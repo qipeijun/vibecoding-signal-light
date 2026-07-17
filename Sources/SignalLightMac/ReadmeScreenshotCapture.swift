@@ -8,7 +8,10 @@ enum ReadmeScreenshotCapture {
         try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         NSApplication.shared.setActivationPolicy(.accessory)
 
-        let store = SignalLightConfigStore()
+        let demoRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("signal-light-screenshot-\(UUID().uuidString)", isDirectory: true)
+        let demoStateDirectory = demoRoot.appendingPathComponent("state", isDirectory: true)
+        let store = SignalLightConfigStore(configDirectory: demoRoot.appendingPathComponent("config", isDirectory: true))
         let demoConfig = SignalLightConfig(
             schemaVersion: configSchemaVersion,
             display: DisplayConfig(
@@ -20,15 +23,38 @@ enum ReadmeScreenshotCapture {
                 showDockIcon: true,
                 showTouchBar: true
             ),
-            agent: .default,
+            agent: AgentConfig(
+                stateDirectory: demoStateDirectory.path,
+                sessionTTLSeconds: AgentConfig.default.sessionTTLSeconds,
+                launchAtLogin: false
+            ),
             statusRules: StatusRulesConfig(rules: [
-                "attention": SignalRuleConfig(color: "yellow", mode: "flash"),
-                "permission": SignalRuleConfig(color: "red", mode: "flash"),
-                "working": SignalRuleConfig(color: "green", mode: "workPulse"),
+                "attention": SignalRuleConfig(mode: "flash"),
+                "permission": SignalRuleConfig(mode: "slowPulse"),
+                "working": SignalRuleConfig(mode: "workPulse"),
             ])
         )
+        defer { try? FileManager.default.removeItem(at: demoRoot) }
+        try prepareStatusCenterDemo(stateDirectory: demoStateDirectory)
+        let demoThreadCatalog = try prepareThreadCatalog(in: demoRoot)
 
         try saveFloatingLight(to: outputDir.appendingPathComponent("screenshot-floating-light.png"))
+        let stateStore = SignalStateStore(
+            stateDirectory: demoStateDirectory.path,
+            leasePolicy: demoConfig.agent.leasePolicy,
+            sessionTTL: demoConfig.agent.sessionTTLSeconds
+        )
+        _ = stateStore.refresh()
+        try saveRawPanel(
+            content: SettingsTabViewController(
+                configStore: store,
+                config: demoConfig,
+                stateStore: stateStore,
+                threadCatalog: demoThreadCatalog
+            ),
+            size: SettingsTabViewController.statusCenterContentSize,
+            to: outputDir.appendingPathComponent("screenshot-status-center.png")
+        )
         try savePanel(
             title: "显示设置",
             subtitle: "控制悬浮窗、透明度、动画速度和系统显示入口。",
@@ -38,7 +64,7 @@ enum ReadmeScreenshotCapture {
         )
         try savePanel(
             title: "状态灯规则",
-            subtitle: "按状态配置颜色、动画和恢复默认行为。",
+            subtitle: "颜色语义固定，按状态调整动画和恢复默认行为。",
             content: StatusRulesSettingsViewController(config: demoConfig.statusRules, onUpdate: { _ in }),
             size: NSSize(width: 680, height: 540),
             to: outputDir.appendingPathComponent("screenshot-rules-panel.png")
@@ -50,6 +76,67 @@ enum ReadmeScreenshotCapture {
             size: NSSize(width: 680, height: 500),
             to: outputDir.appendingPathComponent("screenshot-diagnostics.png")
         )
+    }
+
+    private static func prepareStatusCenterDemo(stateDirectory: URL) throws {
+        let now = Date().timeIntervalSince1970
+        let source = SessionSource(
+            bundleIdentifier: "com.openai.codex",
+            processIdentifier: nil,
+            localizedName: "Codex",
+            capturedAt: now
+        )
+        let sessionKey = "019f6a74-fae6-7733-b441-b2d0fc5c28cd"
+        try SignalLightStateFiles.writeSessionState(
+            SessionState(sessions: [
+                sessionKey: SessionRecord(
+                    signal: "working",
+                    updatedAt: now,
+                    source: source,
+                    model: "gpt-5-codex"
+                ),
+                "019f6a74-fae6-7733-b441-76a0ae55b173": SessionRecord(
+                    signal: "thinking",
+                    updatedAt: now - 18,
+                    source: source,
+                    model: "gpt-5.4"
+                ),
+                "019f6a74-fae6-7733-b441-329ef4fbf82a": SessionRecord(
+                    signal: "tool_done",
+                    updatedAt: now - 35,
+                    source: source,
+                    model: "gpt-5.4-mini"
+                ),
+            ]),
+            in: stateDirectory
+        )
+        try SignalLightStateFiles.writeCurrentStatus("working", in: stateDirectory, updatedAt: now)
+
+        for (offset, signal) in ["session_start", "thinking", "working"].enumerated() {
+            try SignalLightStateFiles.appendHistoryEntry(
+                SignalHistoryEntry(
+                    recordedAt: now - Double(2 - offset) * 12,
+                    sessionKey: sessionKey,
+                    signal: signal,
+                    aggregate: signal == "thinking" ? "working" : signal,
+                    source: source,
+                    model: "gpt-5-codex"
+                ),
+                in: stateDirectory,
+                now: now
+            )
+        }
+    }
+
+    private static func prepareThreadCatalog(in demoRoot: URL) throws -> CodexThreadCatalog {
+        let indexURL = demoRoot.appendingPathComponent("session_index.jsonl")
+        let lines = [
+            #"{"id":"019f6a74-fae6-7733-b441-b2d0fc5c28cd","thread_name":"优化 Signal Light 状态面板"}"#,
+            #"{"id":"019f6a74-fae6-7733-b441-76a0ae55b173","thread_name":"检查 Hook 运行状态"}"#,
+            #"{"id":"019f6a74-fae6-7733-b441-329ef4fbf82a","thread_name":"完善灯语动态效果"}"#,
+        ]
+        try (lines.joined(separator: "\n") + "\n").write(to: indexURL, atomically: true, encoding: .utf8)
+        return CodexThreadCatalog(indexURL: indexURL)
     }
 
     private static func saveFloatingLight(to url: URL) throws {
@@ -116,6 +203,15 @@ enum ReadmeScreenshotCapture {
         root.addSubview(content.view)
         scrollToTopIfNeeded(content.view)
 
+        try render(root, size: size, to: url)
+    }
+
+    private static func saveRawPanel(content: NSViewController, size: NSSize, to url: URL) throws {
+        let root = ScreenshotCanvas(frame: NSRect(origin: .zero, size: size))
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        content.view.frame = root.bounds
+        root.addSubview(content.view)
         try render(root, size: size, to: url)
     }
 

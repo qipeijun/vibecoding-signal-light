@@ -1,14 +1,13 @@
 [project]
 name = "signal-light"
 version = "1.0.3"
-description = "Native macOS status light for Codex, Claude Code and local AI coding agents."
+description = "Native macOS status light for Codex."
 readme = "README.md"
 requires-python = ">=3.11"
 keywords = [
     "ai-agent",
     "ai-coding",
     "codex",
-    "claude-code",
     "macos",
     "appkit",
     "menubar",
@@ -35,9 +34,12 @@ dev = [
 [project.scripts]
 signal-light = "signal_light.cli:main"
 codex-signal-hook = "signal_light.codex_hook:main"
-claude-code-signal-hook = "signal_light.claude_code_hook:main"
 
 [project.urls]
 Homepage = "https://qipeijun.github.io/vibecoding-signal-light/"
 Repository = "https://github.com/qipeijun/vibecoding-signal-light"
 Issues = "https://github.com/qipeijun/vibecoding-signal-light/issues"
+
+[tool.pytest.ini_options]
+# 保证从仓库根目录执行 `uv run pytest` 时加载本地源码，而不是依赖全局安装。
+pythonpath = ["."]

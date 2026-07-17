@@ -7,26 +7,7 @@ private let codexHookEvents: [(name: String, matcher: String?)] = [
     ("PermissionRequest", "*"),
     ("PostToolUse", "*"),
     ("Stop", nil),
-]
-
-private let claudeHookEvents: [(name: String, matcher: String?)] = [
-    ("SessionStart", nil),
-    ("UserPromptSubmit", nil),
-    ("PreToolUse", "*"),
-    ("PostToolUse", "*"),
-    ("PostToolUseFailure", nil),
-    ("PostToolBatch", nil),
-    ("PermissionDenied", nil),
-    ("Notification", nil),
-    ("PermissionRequest", "*"),
-    ("PreCompact", nil),
-    ("PostCompact", nil),
-    ("SubagentStart", nil),
-    ("SubagentStop", nil),
-    ("TaskCreated", nil),
-    ("TaskCompleted", nil),
-    ("Stop", nil),
-    ("StopFailure", nil),
+    // 会话正常结束时清理对应状态，租约仅负责异常退出兜底。
     ("SessionEnd", nil),
 ]
 
@@ -44,6 +25,29 @@ public struct HookInstallReport: Equatable {
         self.ok = ok
         self.message = message
     }
+}
+
+/// Codex Hook 的可验证连接阶段。
+public enum CodexHookConnectionState: Equatable {
+    /// Hook 配置不存在或不完整。
+    case missingConfiguration(String)
+    /// 配置已经写入，但尚未收到真实事件；用户可能仍需在 `/hooks` 确认信任。
+    case awaitingFirstEvent
+    /// 已收到至少一次真实 Hook 事件。
+    case active(lastEventAt: Double)
+}
+
+public func inspectCodexHookConnection(
+    homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+    stateDirectory: URL
+) -> CodexHookConnectionState {
+    if let failed = checkSignalLightHooks(homeDirectory: homeDirectory).first(where: { !$0.ok }) {
+        return .missingConfiguration(failed.message)
+    }
+    guard let activity = SignalLightStateFiles.readCodexHookActivity(in: stateDirectory) else {
+        return .awaitingFirstEvent
+    }
+    return .active(lastEventAt: activity.lastEventAt)
 }
 
 public enum HookInstallError: Error, LocalizedError, CustomStringConvertible {
@@ -66,7 +70,6 @@ public func installSignalLightHooks(
 ) throws -> [HookInstallReport] {
     [
         try installCodexHooks(homeDirectory: homeDirectory),
-        try installClaudeHooks(homeDirectory: homeDirectory),
     ]
 }
 
@@ -75,9 +78,73 @@ public func checkSignalLightHooks(
 ) -> [HookInstallReport] {
     [
         checkCodexHooks(homeDirectory: homeDirectory),
-        checkClaudeHooks(homeDirectory: homeDirectory),
     ]
 }
+
+/// Codex-only 版本的一次性升级迁移：仅移除旧 Signal Light Claude Hook，保留其他 Claude 配置。
+@discardableResult
+public func removeLegacyClaudeHookConfiguration(
+    homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+) throws -> Bool {
+    let path = homeDirectory.appendingPathComponent(".claude/settings.json")
+    guard var root = try readJSONObject(at: path), var hooks = root["hooks"] as? [String: Any] else {
+        return false
+    }
+
+    var changed = false
+    for (event, value) in hooks {
+        guard let groups = value as? [[String: Any]] else {
+            continue
+        }
+        let retainedGroups = groups.compactMap { group -> [String: Any]? in
+            guard let handlers = group["hooks"] as? [[String: Any]] else {
+                return group
+            }
+            let retainedHandlers = handlers.filter { handler in
+                guard let command = handler["command"] as? String else {
+                    return true
+                }
+                return !legacySignalLightClaudeHookCommands.contains(
+                    command.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+            guard retainedHandlers.count != handlers.count else {
+                return group
+            }
+            changed = true
+            guard !retainedHandlers.isEmpty else {
+                return nil
+            }
+            var updated = group
+            updated["hooks"] = retainedHandlers
+            return updated
+        }
+        if retainedGroups.isEmpty {
+            hooks.removeValue(forKey: event)
+        } else {
+            hooks[event] = retainedGroups
+        }
+    }
+
+    guard changed else {
+        return false
+    }
+    if hooks.isEmpty {
+        root.removeValue(forKey: "hooks")
+    } else {
+        root["hooks"] = hooks
+    }
+    try writeJSONObject(root, to: path)
+    return true
+}
+
+/// 历史版本实际写入过的 Signal Light Claude Hook 命令。
+/// 使用精确集合，避免删除用户或其他工具的同名脚本。
+private let legacySignalLightClaudeHookCommands: Set<String> = [
+    "/usr/local/bin/claude-code-signal-hook",
+    "/opt/signal-light/claude-code-signal-hook",
+    "/Applications/Signal Light.app/Contents/Resources/bin/claude-code-signal-hook",
+]
 
 private func installCodexHooks(homeDirectory: URL) throws -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".codex/hooks.json")
@@ -96,31 +163,9 @@ private func installCodexHooks(homeDirectory: URL) throws -> HookInstallReport {
     )
 }
 
-private func installClaudeHooks(homeDirectory: URL) throws -> HookInstallReport {
-    let path = homeDirectory.appendingPathComponent(".claude/settings.json")
-    var root = try readJSONObject(at: path) ?? [:]
-    let before = root
-    root = upsertHooks(in: root, command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
-    try writeJSONObject(root, to: path)
-
-    let changed = !jsonObjectsEqual(before, root)
-    return HookInstallReport(
-        title: "Claude Code hooks",
-        path: path.path,
-        changed: changed,
-        ok: true,
-        message: changed ? "已写入 Claude Code hooks" : "已存在，无需修改"
-    )
-}
-
 private func checkCodexHooks(homeDirectory: URL) -> HookInstallReport {
     let path = homeDirectory.appendingPathComponent(".codex/hooks.json")
     return checkHooks(path: path, title: "Codex hooks", command: SignalLightPaths.codexHookCommand, events: codexHookEvents)
-}
-
-private func checkClaudeHooks(homeDirectory: URL) -> HookInstallReport {
-    let path = homeDirectory.appendingPathComponent(".claude/settings.json")
-    return checkHooks(path: path, title: "Claude Code hooks", command: SignalLightPaths.claudeHookCommand, events: claudeHookEvents)
 }
 
 private func checkHooks(
@@ -255,9 +300,6 @@ private func hasHook(root: [String: Any], event: String, command: String) -> Boo
 private func isSignalLightHookCommand(_ existing: String, expectedCommand: String) -> Bool {
     if expectedCommand.hasSuffix("/codex-signal-hook") {
         return existing == expectedCommand || existing.contains("/codex-signal-hook")
-    }
-    if expectedCommand.hasSuffix("/claude-code-signal-hook") {
-        return existing == expectedCommand || existing.contains("/claude-code-signal-hook")
     }
     return existing == expectedCommand
 }

@@ -2,6 +2,20 @@ import AppKit
 import SignalLightShared
 
 final class DiagnosticsViewController: NSViewController {
+    private enum IndicatorState {
+        case pass
+        case pending
+        case fail
+
+        var color: NSColor {
+            switch self {
+            case .pass: return .systemGreen
+            case .pending: return .systemYellow
+            case .fail: return .systemRed
+            }
+        }
+    }
+
     private let configStore: SignalLightConfigStore
     private weak var statusStack: NSStackView?
     private weak var hookStatusStack: NSStackView?
@@ -60,7 +74,7 @@ final class DiagnosticsViewController: NSViewController {
 
         stack.addArrangedSubview(makeSeparator())
 
-        let hookLabel = NSTextField(labelWithString: "Agent Hooks:")
+        let hookLabel = NSTextField(labelWithString: "Codex Hook:")
         hookLabel.font = NSFont.boldSystemFont(ofSize: 12)
         stack.addArrangedSubview(hookLabel)
 
@@ -71,7 +85,10 @@ final class DiagnosticsViewController: NSViewController {
         self.hookStatusStack = hookStatusStack
         stack.addArrangedSubview(hookStatusStack)
 
-        let hookRepairResultField = NSTextField(labelWithString: "无")
+        let installResultURL = configStore.configDirectoryURL().appendingPathComponent("hook-install-result.txt")
+        let installResult = (try? String(contentsOf: installResultURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hookRepairResultField = NSTextField(labelWithString: installResult.flatMap { $0.isEmpty ? nil : $0 } ?? "无")
         hookRepairResultField.lineBreakMode = .byTruncatingMiddle
         hookRepairResultField.preferredMaxLayoutWidth = 500
         hookRepairResultField.font = NSFont.systemFont(ofSize: 11)
@@ -103,12 +120,12 @@ final class DiagnosticsViewController: NSViewController {
         recheckBtn.controlSize = .small
         buttonStack.addArrangedSubview(recheckBtn)
 
-        let repairBtn = NSButton(title: "修复配置", target: self, action: #selector(repair))
+        let repairBtn = NSButton(title: "重建默认配置", target: self, action: #selector(repair))
         repairBtn.bezelStyle = .rounded
         repairBtn.controlSize = .small
         buttonStack.addArrangedSubview(repairBtn)
 
-        let repairHooksBtn = NSButton(title: "修复 Agent Hooks", target: self, action: #selector(repairHooks))
+        let repairHooksBtn = NSButton(title: "修复 Codex Hook", target: self, action: #selector(repairHooks))
         repairHooksBtn.bezelStyle = .rounded
         repairHooksBtn.controlSize = .small
         self.repairHooksButton = repairHooksBtn
@@ -177,6 +194,11 @@ final class DiagnosticsViewController: NSViewController {
     }
 
     @objc private func repair() {
+        guard confirmSettingsAction(
+            title: "重建默认配置？",
+            message: "当前显示、Codex 和状态规则设置将被默认配置替换。Codex Hook 不受影响。",
+            actionTitle: "重建配置"
+        ) else { return }
         do {
             _ = try configStore.repairConfig()
             postConfigChanged()
@@ -188,8 +210,24 @@ final class DiagnosticsViewController: NSViewController {
     }
 
     @objc private func repairHooks() {
+        let reports = checkSignalLightHooks()
+        guard reports.contains(where: { !$0.ok }) else {
+            hookRepairResultField?.stringValue = "Codex Hook 已连接，无需修复。"
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "修复 Codex Hook？"
+        alert.informativeText = "将更新 ~/.codex/hooks.json 中的 Signal Light 事件，不会删除其他 Hook。"
+        alert.addButton(withTitle: "修复")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
         repairHooksButton?.isEnabled = false
-        hookRepairResultField?.stringValue = "正在修复 Agent Hooks..."
+        hookRepairResultField?.stringValue = "正在修复 Codex Hook..."
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let result = Result { try installSignalLightHooks() }
@@ -203,9 +241,15 @@ final class DiagnosticsViewController: NSViewController {
                     self.hookRepairResultField?.stringValue = reports
                         .map { "\($0.title): \($0.message)" }
                         .joined(separator: "；")
+                    DistributedNotificationCenter.default().postNotificationName(
+                        NSNotification.Name("com.vibecoding.signal-light.hooks-changed"),
+                        object: nil,
+                        userInfo: nil,
+                        deliverImmediately: true
+                    )
                     self.runDiagnostics()
                 case .failure(let error):
-                    self.hookRepairResultField?.stringValue = "修复 Agent Hooks 失败: \(error.localizedDescription)"
+                    self.hookRepairResultField?.stringValue = "修复 Codex Hook 失败: \(error.localizedDescription)"
                     self.showSettingsError(error)
                 }
             }
@@ -217,6 +261,11 @@ final class DiagnosticsViewController: NSViewController {
     }
 
     @objc private func resetAll() {
+        guard confirmSettingsAction(
+            title: "恢复全部默认设置？",
+            message: "当前显示、Codex 和状态规则设置将恢复默认值。Codex Hook 不受影响。",
+            actionTitle: "恢复默认"
+        ) else { return }
         let defaultConfig = SignalLightConfig.default
         do {
             try configStore.saveConfig(defaultConfig)
@@ -245,13 +294,17 @@ final class DiagnosticsViewController: NSViewController {
     }
 
     private func makeStatusRow(label: String, pass: Bool) -> NSView {
+        makeStatusRow(label: label, state: pass ? .pass : .fail)
+    }
+
+    private func makeStatusRow(label: String, state: IndicatorState) -> NSView {
         let row = NSStackView()
         row.orientation = .horizontal
         row.spacing = 6
         row.alignment = .centerY
 
         let indicator = NSTextField(labelWithString: "●")
-        indicator.textColor = pass ? .systemGreen : .systemRed
+        indicator.textColor = state.color
         indicator.font = NSFont.systemFont(ofSize: 14)
         row.addArrangedSubview(indicator)
 
@@ -270,21 +323,42 @@ final class DiagnosticsViewController: NSViewController {
         }
         hookCheckGeneration += 1
         let generation = hookCheckGeneration
-        hookStatusStack.addArrangedSubview(makeStatusRow(label: "Agent hooks 检查中...", pass: true))
+        hookStatusStack.addArrangedSubview(makeStatusRow(label: "Codex Hook 检查中...", state: .pending))
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let reports = checkSignalLightHooks()
+            guard let self else { return }
+            let config = self.configStore.loadOrRepairConfig()
+            let agent = self.configStore.effectiveAgentConfig(from: config)
+            let connection = inspectCodexHookConnection(
+                stateDirectory: URL(fileURLWithPath: agent.stateDirectory)
+            )
             DispatchQueue.main.async {
-                guard let self,
-                      generation == self.hookCheckGeneration,
+                guard generation == self.hookCheckGeneration,
                       let hookStatusStack = self.hookStatusStack
                 else {
                     return
                 }
                 hookStatusStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-                for report in reports {
+                switch connection {
+                case .missingConfiguration(let message):
                     hookStatusStack.addArrangedSubview(
-                        self.makeStatusRow(label: "\(report.title): \(report.message)", pass: report.ok)
+                        self.makeStatusRow(label: "Codex Hook 未连接：\(message)", state: .fail)
+                    )
+                case .awaitingFirstEvent:
+                    hookStatusStack.addArrangedSubview(
+                        self.makeStatusRow(
+                            label: "已配置，等待首次事件；请在 Codex /hooks 确认信任",
+                            state: .pending
+                        )
+                    )
+                case .active(let lastEventAt):
+                    let time = DateFormatter.localizedString(
+                        from: Date(timeIntervalSince1970: lastEventAt),
+                        dateStyle: .none,
+                        timeStyle: .medium
+                    )
+                    hookStatusStack.addArrangedSubview(
+                        self.makeStatusRow(label: "已连接，最近事件 \(time)", state: .pass)
                     )
                 }
             }

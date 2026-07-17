@@ -3,8 +3,9 @@ import Dispatch
 import ServiceManagement
 import SignalLightShared
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let configStore = SignalLightConfigStore()
+    private let threadCatalog = CodexThreadCatalog()
     private var config: SignalLightConfig!
     private var stateStore: SignalStateStore!
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -15,14 +16,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var animationTimer: DispatchSourceTimer?
     private var lastFallbackRefresh = Date.distantPast
     private var lastWakeRefresh = Date.distantPast
+    private var lastConnectionDiagnostics = Date.distantPast
+    private var connectionDiagnosticsGeneration = 0
     private var tick = 0
+    private var animationStartedAt = ProcessInfo.processInfo.systemUptime
     private var settingsPopover: NSPopover?
     private var contextMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         config = configStore.loadOrRepairConfig()
         let agent = configStore.effectiveAgentConfig(from: config)
-        stateStore = SignalStateStore(stateDirectory: agent.stateDirectory)
+        stateStore = SignalStateStore(
+            stateDirectory: agent.stateDirectory,
+            leasePolicy: agent.leasePolicy,
+            sessionTTL: agent.sessionTTLSeconds,
+            threadCatalog: threadCatalog
+        )
 
         // 根据配置设置激活策略
         if !config.display.showDockIcon {
@@ -35,9 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncLaunchAtLogin()
         viewController.showTouchBar = config.display.showTouchBar
         _ = stateStore.refresh()
-        updateViews()
+        updateViews(refreshRuntimeStatus: true)
         startStatusChangeObserver()
         startStateDirectoryWatcher()
+        runConnectionDiagnostics()
 
         startAnimationTimer()
 
@@ -48,10 +58,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(dismissStatusPopoverForScreenChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(dismissStatusPopoverForScreenChange),
+            name: NSApplication.didResignActiveNotification,
+            object: nil
+        )
+
         DistributedNotificationCenter.default().addObserver(
             self,
             selector: #selector(handleClearSessions),
             name: NSNotification.Name("com.vibecoding.signal-light.clear-sessions"),
+            object: nil
+        )
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleHookConfigurationChanged),
+            name: NSNotification.Name("com.vibecoding.signal-light.hooks-changed"),
             object: nil
         )
 
@@ -60,6 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(workspaceDidActivateApplication),
             name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(accessibilityDisplayOptionsDidChange),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil
         )
         workspaceCenter.addObserver(
@@ -74,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.screensDidWakeNotification,
             object: nil
         )
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(dismissStatusPopoverForScreenChange),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -81,6 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stateDirectoryWatcher.stop()
         statusChangeObserver?.stop()
         floatingPanelCoordinator?.stop()
+        NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     private func buildStatusItem() {
@@ -118,13 +162,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let popover = NSPopover()
-        popover.contentSize = NSSize(width: 680, height: 540)
+        popover.contentSize = SettingsTabViewController.statusCenterContentSize
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentViewController = SettingsTabViewController(
             configStore: configStore,
             config: config,
-            stateStore: stateStore
+            stateStore: stateStore,
+            threadCatalog: threadCatalog,
+            onOpenSession: { [weak self] threadID, source in
+                self?.openSession(threadID: threadID, source: source)
+            }
         )
         popover.show(relativeTo: statusItem.button!.bounds, of: statusItem.button!, preferredEdge: .minY)
         settingsPopover = popover
@@ -141,8 +190,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let oldStateDir = stateStore.stateDirectoryURL.path
         let newStateDir = agent.stateDirectory
         if oldStateDir != newStateDir {
-            stateStore = SignalStateStore(stateDirectory: newStateDir)
+            stateStore = SignalStateStore(
+                stateDirectory: newStateDir,
+                leasePolicy: agent.leasePolicy,
+                sessionTTL: agent.sessionTTLSeconds,
+                threadCatalog: threadCatalog
+            )
             startStateDirectoryWatcher()
+            _ = stateStore.refresh()
+        } else {
+            stateStore.updateLeasePolicy(agent.leasePolicy, sessionTTL: agent.sessionTTLSeconds)
             _ = stateStore.refresh()
         }
 
@@ -152,11 +209,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 动画速度变更
         animationTimer?.cancel()
+        resetAnimationPhase()
         startAnimationTimer()
 
         viewController.showTouchBar = newConfig.display.showTouchBar
 
-        updateViews()
+        runConnectionDiagnostics()
+        updateViews(refreshRuntimeStatus: true)
     }
 
     @objc private func handleClearSessions() {
@@ -165,22 +224,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? SignalLightStateFiles.clearSessionsAndWriteIdle(in: stateDir)
 
         _ = stateStore.refresh()
-        tick = 0
-        updateViews()
+        resetAnimationPhase()
+        updateViews(refreshRuntimeStatus: true)
+    }
+
+    @objc private func handleHookConfigurationChanged() {
+        runConnectionDiagnostics()
     }
 
     private func startAnimationTimer() {
-        let interval = 0.18 / config.display.animationSpeed
+        // 固定 30fps 刷新，速度设置只改变动画周期，不再通过降低帧率制造阶梯感。
+        let interval = 1.0 / 30.0
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(4))
         timer.setEventHandler { [weak self] in
             guard let self else {
                 return
             }
             self.tick += 1
-            self.refreshStateIfFallbackIntervalElapsed()
-            self.updateViews()
-            if self.tick.isMultiple(of: 10) {
+            let refreshedRuntime = self.refreshStateIfFallbackIntervalElapsed()
+            self.updateViews(refreshRuntimeStatus: refreshedRuntime)
+            if self.tick.isMultiple(of: 60) {
                 self.keepPanelFloating()
             }
         }
@@ -218,12 +282,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func updateViews() {
-        let currentFrame = frame(for: stateStore.state, tick: tick, rules: config.statusRules)
+    private func updateViews(refreshRuntimeStatus: Bool = false) {
+        let state = stateStore.effectiveState
+        // 用户速度设置仅作用于长期驻留的环境状态，行动提示保持产品定义的固定节奏。
+        let safeSpeed = state.allowsAnimationSpeedAdjustment
+            ? min(max(config.display.animationSpeed, 0.25), 1.0)
+            : 1.0
+        let elapsedTime = max(0, ProcessInfo.processInfo.systemUptime - animationStartedAt) * safeSpeed
+        let currentFrame = frame(
+            for: state,
+            elapsedTime: elapsedTime,
+            rules: config.statusRules,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
         statusItem.button?.image = makeStatusIcon(frameState: currentFrame)
-        viewController.update(frameState: currentFrame)
-        (settingsPopover?.contentViewController as? SettingsTabViewController)?
-            .refreshRuntimeStatus(config: config, stateStore: stateStore)
+        statusItem.button?.setAccessibilityLabel("Signal Light")
+        statusItem.button?.setAccessibilityValue(state.displayName)
+        statusItem.button?.toolTip = "Signal Light：\(state.displayName)"
+        viewController.update(frameState: currentFrame, stateName: state.displayName)
+        if let settings = settingsPopover?.contentViewController as? SettingsTabViewController {
+            if refreshRuntimeStatus {
+                settings.refreshRuntimeStatus(config: config, stateStore: stateStore, frameState: currentFrame)
+            } else {
+                settings.updateAnimationFrame(currentFrame)
+            }
+        }
     }
 
     @objc private func togglePanel() {
@@ -243,9 +326,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recoverAfterWake()
     }
 
+    @objc private func accessibilityDisplayOptionsDidChange() {
+        resetAnimationPhase()
+        updateViews()
+    }
+
+    /// 显示器布局或 macOS Space 切换后，旧锚点已失效，主动关闭状态面板。
+    @objc private func dismissStatusPopoverForScreenChange() {
+        guard let popover = settingsPopover, popover.isShown else {
+            return
+        }
+        popover.performClose(nil)
+        settingsPopover = nil
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        if notification.object as? NSPopover === settingsPopover {
+            settingsPopover = nil
+        }
+    }
+
     private func startStatusChangeObserver() {
         let observer = StatusChangeObserver { [weak self] in
-            self?.refreshStateAndViews()
+            guard let self else { return }
+            self.refreshStateAndViews()
+            if self.stateStore.hookIssue != nil {
+                self.runConnectionDiagnostics()
+            }
         }
         observer.start()
         statusChangeObserver = observer
@@ -259,10 +366,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func refreshStateAndViews() {
         if stateStore.refresh() {
-            tick = 0
+            resetAnimationPhase()
         }
         lastFallbackRefresh = Date()
-        updateViews()
+        updateViews(refreshRuntimeStatus: true)
         keepPanelFloating()
     }
 
@@ -274,6 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastWakeRefresh = now
 
         animationTimer?.cancel()
+        resetAnimationPhase()
         startAnimationTimer()
         startStateDirectoryWatcher()
         refreshStateAndViews()
@@ -286,11 +394,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let source = SessionSourceActivation.preferredSource(
             in: sessionState.sessions,
             aggregate: stateStore.state,
-            sessionTTL: agent.sessionTTLSeconds
+            sessionTTL: agent.sessionTTLSeconds,
+            leasePolicy: agent.leasePolicy
         ) else {
             return
         }
         SessionSourceActivation.activate(source)
+    }
+
+    /// Codex 会话优先走官方 URL Scheme 精确定位；不可导航的会话只激活来源应用。
+    private func openSession(threadID: String?, source: SessionSource?) {
+        if let threadID,
+           let url = codexThreadURL(threadID: threadID),
+           NSWorkspace.shared.open(url) {
+            return
+        }
+        if let source {
+            SessionSourceActivation.activate(source)
+            return
+        }
+        activateCurrentSourceApplication()
     }
 
     private func readSessionState() -> SessionState {
@@ -303,18 +426,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return state
     }
 
-    private func refreshStateIfFallbackIntervalElapsed() {
+    @discardableResult
+    private func refreshStateIfFallbackIntervalElapsed() -> Bool {
         let now = Date()
-        guard now.timeIntervalSince(lastFallbackRefresh) >= 3 else {
-            return
+        guard now.timeIntervalSince(lastFallbackRefresh) >= 1 else {
+            return false
         }
         lastFallbackRefresh = now
         if stateStore.refresh() {
-            tick = 0
+            resetAnimationPhase()
+        }
+        if now.timeIntervalSince(lastConnectionDiagnostics) >= 300 {
+            runConnectionDiagnostics()
+        }
+        return true
+    }
+
+    /// 自动检查只读取本地健康状态；修复仍由诊断页中的显式操作触发。
+    private func runConnectionDiagnostics() {
+        lastConnectionDiagnostics = Date()
+        connectionDiagnosticsGeneration += 1
+        let generation = connectionDiagnosticsGeneration
+        let configFileURL = configStore.configFileURL()
+        let agent = configStore.effectiveAgentConfig(from: config)
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var issues: [String] = []
+            if (try? Data(contentsOf: configFileURL)) == nil {
+                issues.append("配置文件无法读取")
+            }
+
+            let stateDirectory = URL(fileURLWithPath: agent.stateDirectory)
+            let writablePath = FileManager.default.fileExists(atPath: stateDirectory.path)
+                ? stateDirectory.path
+                : stateDirectory.deletingLastPathComponent().path
+            if !FileManager.default.isWritableFile(atPath: writablePath) {
+                issues.append("状态目录不可写")
+            }
+
+            switch inspectCodexHookConnection(stateDirectory: stateDirectory) {
+            case .missingConfiguration(let message):
+                issues.append("Codex Hook 未连接：\(message)")
+            case .awaitingFirstEvent:
+                issues.append("Codex Hook 已配置，等待首次事件；请在 Codex /hooks 确认信任")
+            case .active:
+                break
+            }
+
+            DispatchQueue.main.async {
+                guard let self, generation == self.connectionDiagnosticsGeneration else {
+                    return
+                }
+                if self.stateStore.updateHookIssue(issues.isEmpty ? nil : issues.joined(separator: "；")) {
+                    self.resetAnimationPhase()
+                }
+                self.updateViews(refreshRuntimeStatus: true)
+            }
         }
     }
 
     private func keepPanelFloating(force: Bool = false) {
         floatingPanelCoordinator?.keepFloating(display: config.display, force: force)
+    }
+
+    private func resetAnimationPhase() {
+        tick = 0
+        animationStartedAt = ProcessInfo.processInfo.systemUptime
     }
 }

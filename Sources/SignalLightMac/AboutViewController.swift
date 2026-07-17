@@ -29,7 +29,7 @@ final class AboutViewController: NSViewController {
 
         stack.addArrangedSubview(makeSeparator())
 
-        let summary = NSTextField(labelWithString: "给 Codex、Claude Code 等本地 AI 编程助手一个看得见的 macOS 状态灯。")
+        let summary = NSTextField(labelWithString: "给 Codex 一个看得见、能分清风险优先级的 macOS 状态灯。")
         summary.font = NSFont.systemFont(ofSize: 13)
         summary.lineBreakMode = .byWordWrapping
         summary.preferredMaxLayoutWidth = 500

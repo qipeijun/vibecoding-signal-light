@@ -1,17 +1,18 @@
 import AppKit
 import Foundation
+import SignalLightShared
 
-private let appBundleIdentifier = "com.vibecoding.signal-light"
 private let installedAppPath = "/Applications/Signal Light.app"
 private let installedCommandPaths = [
     "/usr/local/bin/signal-light",
     "/usr/local/bin/codex-signal-hook",
+    // Codex-only 升级后仍清理旧版本遗留命令。
     "/usr/local/bin/claude-code-signal-hook",
     "/usr/local/bin/signal-light-uninstall",
 ]
 
 func quitSignalLightApp() {
-    let apps = NSRunningApplication.runningApplications(withBundleIdentifier: appBundleIdentifier)
+    let apps = NSRunningApplication.runningApplications(withBundleIdentifier: SignalLightInstallLifecycle.appBundleIdentifier)
     for app in apps {
         app.terminate()
     }
@@ -20,13 +21,13 @@ func quitSignalLightApp() {
 
     let deadline = Date().addingTimeInterval(2)
     while Date() < deadline {
-        if NSRunningApplication.runningApplications(withBundleIdentifier: appBundleIdentifier).isEmpty {
+        if NSRunningApplication.runningApplications(withBundleIdentifier: SignalLightInstallLifecycle.appBundleIdentifier).isEmpty {
             return
         }
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    for app in NSRunningApplication.runningApplications(withBundleIdentifier: appBundleIdentifier) {
+    for app in NSRunningApplication.runningApplications(withBundleIdentifier: SignalLightInstallLifecycle.appBundleIdentifier) {
         app.forceTerminate()
     }
     runKillallFallback()
@@ -35,7 +36,18 @@ func quitSignalLightApp() {
 func uninstallSignalLight(stateDir: URL) throws {
     quitSignalLightApp()
 
-    let paths = [installedAppPath] + installedCommandPaths + [stateDir.path]
+    // 状态目录允许用户自定义，卸载时只删除明确归属本产品的文件。
+    try SignalLightInstallLifecycle.removeOwnedStateFiles(in: stateDir)
+
+    let appURL = URL(fileURLWithPath: installedAppPath, isDirectory: true)
+    var paths: [String] = []
+    if SignalLightInstallLifecycle.ownsInstalledApp(at: appURL) {
+        paths.append(installedAppPath)
+    }
+    paths.append(contentsOf: installedCommandPaths.filter { path in
+        SignalLightInstallLifecycle.ownsInstalledCommand(at: URL(fileURLWithPath: path))
+    })
+
     let protectedPaths = paths.filter { FileManager.default.fileExists(atPath: $0) && !canRemove(path: $0) }
 
     if protectedPaths.isEmpty {

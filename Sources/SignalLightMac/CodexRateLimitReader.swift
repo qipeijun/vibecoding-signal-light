@@ -123,6 +123,9 @@ final class CodexRateLimitReader {
 
     private static func userFacingReason(for error: Error) -> String {
         if let readerError = error as? CodexRateLimitReaderError {
+            if case .serverError(let message) = readerError {
+                return localizedServerError(message)
+            }
             return readerError.localizedDescription
         }
         if let decodingError = error as? CodexRateLimitDecodingError {
@@ -142,6 +145,25 @@ final class CodexRateLimitReader {
             return "Codex 网络不可达，暂时无法读取额度"
         }
         return "读取 Codex 额度失败: \(message)"
+    }
+
+    /// app-server 的错误文案属于内部协议，不直接暴露给面板用户。
+    private static func localizedServerError(_ message: String) -> String {
+        let lowercased = message.lowercased()
+        if lowercased.contains("auth")
+            || lowercased.contains("login")
+            || lowercased.contains("credential")
+        {
+            return "请先在 Codex 中登录 ChatGPT"
+        }
+        if lowercased.contains("network")
+            || lowercased.contains("dns")
+            || lowercased.contains("timed out")
+            || lowercased.contains("unreachable")
+        {
+            return "Codex 网络不可达，请稍后重试"
+        }
+        return "Codex 服务暂时无法返回额度"
     }
 }
 

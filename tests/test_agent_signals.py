@@ -6,8 +6,6 @@ import pytest
 
 from signal_light.agent_signals import SIGNALS
 from signal_light import cli
-from signal_light.claude_code_hook import ClaudeCodeHookInput, choose_signal as choose_claude_signal
-from signal_light.claude_code_hook import model_name as claude_model_name
 from signal_light.codex_hook import CodexHookInput, choose_signal, model_name as codex_model_name, session_key
 from signal_light import runtime
 from signal_light.runtime import aggregate_sessions, apply_session_signal, write_current_status
@@ -44,14 +42,16 @@ def test_idle_signal_leaves_green_on() -> None:
     assert light.states[-1] == (True, False, False)
 
 
-def test_working_signal_uses_slow_green_flash() -> None:
+def test_working_signal_uses_two_second_green_pulse() -> None:
     light = RecordingLight()
 
     SIGNALS["working"].play(light, speed=0.05, cycles=1)
 
     assert SIGNALS["working"].repeat is True
-    assert light.states[:2] == [(True, False, False), (False, False, False)]
-    assert light.brightness_states == []
+    assert sum(frame.seconds for frame in SIGNALS["working"].frames) == pytest.approx(2.0)
+    assert min(frame.brightness for frame in SIGNALS["working"].frames) == 0.25
+    assert light.states[0] == (True, False, False)
+    assert (0.25, 0.0, 0.0) in light.brightness_states
 
 
 def test_attention_signal_flashes_yellow() -> None:
@@ -61,25 +61,54 @@ def test_attention_signal_flashes_yellow() -> None:
 
     assert SIGNALS["attention"].repeat is True
     assert light.states[:2] == [(False, True, False), (False, False, False)]
+    assert [frame.seconds for frame in SIGNALS["attention"].frames] == [0.30, 0.70]
 
 
-def test_thinking_signal_uses_slow_green_flash() -> None:
+def test_thinking_signal_uses_working_pulse() -> None:
     light = RecordingLight()
 
     SIGNALS["thinking"].play(light, speed=0.05, cycles=1)
 
     assert SIGNALS["thinking"].frames == SIGNALS["working"].frames
-    assert light.states[:2] == [(True, False, False), (False, False, False)]
-    assert light.brightness_states == []
+    assert light.states[0] == (True, False, False)
+    assert (0.25, 0.0, 0.0) in light.brightness_states
 
 
-def test_permission_signal_flashes_red() -> None:
+def test_permission_signal_uses_red_slow_pulse() -> None:
     light = RecordingLight()
 
     SIGNALS["permission"].play(light, speed=0.05, cycles=1)
 
     assert SIGNALS["permission"].repeat is True
-    assert light.states[:2] == [(False, False, True), (False, False, False)]
+    assert sum(frame.seconds for frame in SIGNALS["permission"].frames) == pytest.approx(2.0)
+    assert min(frame.brightness for frame in SIGNALS["permission"].frames) == 0.25
+    assert light.states[0] == (False, False, True)
+    assert (0.0, 0.0, 0.25) in light.brightness_states
+
+
+def test_blocked_signal_uses_red_double_flash() -> None:
+    light = RecordingLight()
+
+    SIGNALS["blocked"].play(light, speed=0.05, cycles=1)
+
+    assert light.states[:4] == [
+        (False, False, True),
+        (False, False, False),
+        (False, False, True),
+        (False, False, False),
+    ]
+    assert [frame.seconds for frame in SIGNALS["blocked"].frames] == [0.18, 0.18, 0.18, 1.46]
+
+
+def test_stale_signal_uses_yellow_slow_pulse() -> None:
+    light = RecordingLight()
+
+    SIGNALS["stale"].play(light, speed=0.05, cycles=1)
+
+    assert sum(frame.seconds for frame in SIGNALS["stale"].frames) == pytest.approx(2.8)
+    assert min(frame.brightness for frame in SIGNALS["stale"].frames) == 0.25
+    assert light.states[0] == (False, True, False)
+    assert (0.0, 0.25, 0.0) in light.brightness_states
 
 
 def test_session_end_returns_to_idle_green() -> None:
@@ -96,6 +125,7 @@ def test_done_signal_returns_to_idle_green() -> None:
     SIGNALS["done"].play(light, speed=0.05)
 
     assert SIGNALS["done"].repeat is False
+    assert sum(frame.seconds for frame in SIGNALS["done"].frames) == pytest.approx(2.0)
     assert light.states[-1] == (True, False, False)
 
 
@@ -109,35 +139,6 @@ def test_codex_stop_with_failed_payload_maps_to_blocked() -> None:
     signal = choose_signal(CodexHookInput(event_name="Stop", payload={"status": "failed"}))
 
     assert signal == "blocked"
-
-
-def test_claude_stop_maps_to_done_idle() -> None:
-    signal = choose_claude_signal(ClaudeCodeHookInput(event_name="Stop", payload={}))
-
-    assert signal == "done"
-
-
-def test_claude_stop_with_error_reason_maps_to_blocked() -> None:
-    signal = choose_claude_signal(ClaudeCodeHookInput(event_name="Stop", payload={"stop_reason": "error"}))
-
-    assert signal == "blocked"
-
-
-@pytest.mark.parametrize(
-    ("event_name", "expected_signal"),
-    [
-        ("PostToolBatch", "working"),
-        ("TaskCreated", "working"),
-        ("TaskCompleted", "tool_done"),
-        ("PermissionDenied", "blocked"),
-        ("StopFailure", "blocked"),
-        ("PostCompact", "tool_done"),
-    ],
-)
-def test_claude_modern_events_map_to_explicit_signals(event_name: str, expected_signal: str) -> None:
-    signal = choose_claude_signal(ClaudeCodeHookInput(event_name=event_name, payload={}))
-
-    assert signal == expected_signal
 
 
 def test_failed_payload_maps_to_blocked() -> None:
@@ -194,7 +195,20 @@ def test_aggregate_sessions_matches_shared_contract(case: dict[str, object]) -> 
             runtime._prune_sessions(sessions, case["now"])
         finally:
             runtime.SESSION_TTL_SECONDS = previous_ttl
-    assert aggregate_sessions(sessions) == case["expected_aggregate"]
+    assert aggregate_sessions(sessions, now=case.get("now")) == case["expected_aggregate"]
+
+
+def test_invalid_lease_environment_values_keep_safe_defaults(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(runtime, "_config_file_path", lambda: tmp_path / "missing-config.json")
+    monkeypatch.setenv("SIGNAL_LIGHT_WORKING_LEASE_SECONDS", "not-a-number")
+    monkeypatch.setenv("SIGNAL_LIGHT_CRITICAL_LEASE_SECONDS", "-1")
+    monkeypatch.setenv("SIGNAL_LIGHT_DONE_DISPLAY_SECONDS", "999")
+
+    config = runtime._read_agent_config()
+
+    assert config["working_lease"] == 1800
+    assert config["critical_lease"] == 86400
+    assert config["done_display"] == 6
 
 
 def test_session_key_prefers_payload_session_id() -> None:
@@ -256,7 +270,7 @@ def test_cli_codex_hook_without_event_uses_stdin_event(monkeypatch) -> None:
     assert calls == [("permission", "session-a", True, True, None)]
 
 
-def test_apply_session_signal_uses_newer_work_over_old_attention(tmp_path, monkeypatch) -> None:
+def test_apply_session_signal_keeps_attention_over_newer_work(tmp_path, monkeypatch) -> None:
     applied: list[str] = []
     monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
     monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
@@ -265,9 +279,9 @@ def test_apply_session_signal_uses_newer_work_over_old_attention(tmp_path, monke
     monkeypatch.setattr(cli, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
 
     assert apply_session_signal("session-a", "attention") == "attention"
-    assert apply_session_signal("session-b", "working") == "working"
+    assert apply_session_signal("session-b", "working") == "attention"
 
-    assert applied == ["attention", "working"]
+    assert applied == ["attention", "attention"]
 
 
 def test_apply_session_signal_uses_newer_permission_over_attention(tmp_path, monkeypatch) -> None:
@@ -301,6 +315,15 @@ def test_write_current_status_rejects_unknown_signal(tmp_path, monkeypatch) -> N
 
     with pytest.raises(runtime.SignalLightError):
         write_current_status("maybe-working")
+
+
+def test_write_current_status_accepts_stale(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(runtime, "CURRENT_STATUS_FILE", tmp_path / "current_status.json")
+
+    write_current_status("stale", updated_at=123.0)
+
+    assert json.loads((tmp_path / "current_status.json").read_text())["aggregate"] == "stale"
 
 
 def test_cli_play_signal_writes_status(monkeypatch) -> None:
@@ -340,7 +363,7 @@ def test_apply_session_signal_clears_non_urgent_session_on_turn_end(tmp_path, mo
     assert applied == ["working", "idle"]
 
 
-def test_apply_session_signal_returns_to_idle_on_done(tmp_path, monkeypatch) -> None:
+def test_apply_session_signal_keeps_fresh_done(tmp_path, monkeypatch) -> None:
     applied: list[str] = []
     monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
     monkeypatch.setattr(runtime, "SESSION_FILE", tmp_path / "sessions.json")
@@ -348,9 +371,9 @@ def test_apply_session_signal_returns_to_idle_on_done(tmp_path, monkeypatch) -> 
     monkeypatch.setattr(runtime, "apply_signal", lambda signal, speed=1.0: applied.append(signal.name))
 
     assert apply_session_signal("session-a", "working") == "working"
-    assert apply_session_signal("session-a", "done") == "idle"
+    assert apply_session_signal("session-a", "done") == "done"
 
-    assert applied == ["working", "idle"]
+    assert applied == ["working", "done"]
 
 
 def test_old_session_json_without_source_remains_readable(tmp_path, monkeypatch) -> None:
@@ -414,12 +437,6 @@ def test_codex_model_name_prefers_payload_over_environment() -> None:
     assert codex_model_name(hook_input, {"SIGNAL_LIGHT_MODEL": "fallback-model"}) == "gpt-5-codex"
 
 
-def test_claude_model_name_uses_environment_fallback() -> None:
-    hook_input = ClaudeCodeHookInput(event_name="PreToolUse", payload={})
-
-    assert claude_model_name(hook_input, {"ANTHROPIC_MODEL": "claude-opus-4.1"}) == "claude-opus-4.1"
-
-
 def test_apply_session_signal_keeps_permission_on_turn_end(tmp_path, monkeypatch) -> None:
     applied: list[str] = []
     monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
@@ -471,3 +488,61 @@ def test_apply_signal_writes_current_status(tmp_path, monkeypatch) -> None:
     payload = json.loads((tmp_path / "current_status.json").read_text())
     assert payload["aggregate"] == "permission"
     assert isinstance(payload["updated_at"], float)
+
+
+def test_history_rolls_by_age_and_count_and_filters_source(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+
+    runtime._append_history(
+        recorded_at=0,
+        session_key="old",
+        signal="working",
+        aggregate="working",
+        source={"bundle_identifier": "com.openai.codex", "workspace_path": "/private/project"},
+        model="gpt-test",
+    )
+    for index in range(runtime.HISTORY_ENTRY_LIMIT + 1):
+        now = runtime.HISTORY_RETENTION_SECONDS + 1 + index
+        runtime._append_history(
+            recorded_at=now,
+            session_key=f"session-{index}",
+            signal="working",
+            aggregate="working",
+            source={"bundle_identifier": "com.openai.codex", "workspace_path": "/private/project"},
+            model="gpt-test",
+        )
+
+    payload = json.loads((tmp_path / "history.json").read_text())
+    entries = payload["entries"]
+    assert len(entries) == runtime.HISTORY_ENTRY_LIMIT
+    assert all(entry["session_key"] != "old" for entry in entries)
+    assert entries[-1]["source"] == {"bundle_identifier": "com.openai.codex"}
+    assert entries[-1]["model"] == "gpt-test"
+    assert "/private/project" not in (tmp_path / "history.json").read_text()
+
+
+def test_history_coalesces_consecutive_duplicate_transitions(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(runtime, "STATE_DIR", tmp_path)
+
+    for recorded_at in (100.0, 100.1):
+        runtime._append_history(
+            recorded_at=recorded_at,
+            session_key="session-a",
+            signal="working",
+            aggregate="working",
+            source=None,
+            model="gpt-test",
+        )
+    runtime._append_history(
+        recorded_at=101.0,
+        session_key="session-a",
+        signal="tool_done",
+        aggregate="working",
+        source=None,
+        model="gpt-test",
+    )
+
+    entries = json.loads((tmp_path / "history.json").read_text())["entries"]
+    assert len(entries) == 2
+    assert entries[0]["recorded_at"] == 100.1
+    assert entries[1]["signal"] == "tool_done"

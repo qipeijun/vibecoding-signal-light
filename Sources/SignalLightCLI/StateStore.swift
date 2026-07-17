@@ -12,6 +12,7 @@ final class StateStore {
     private let currentStatusFile: URL
     private let lockFile: URL
     private let sessionTTL: Double
+    private let leasePolicy: SignalLeasePolicy
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment, config: SignalLightConfig? = nil) {
         let configStore = SignalLightConfigStore()
@@ -29,6 +30,7 @@ final class StateStore {
         currentStatusFile = stateDir.appendingPathComponent("current_status.json")
         lockFile = stateDir.appendingPathComponent("state.lock")
         sessionTTL = agentConfig.sessionTTLSeconds
+        leasePolicy = agentConfig.leasePolicy
     }
 
     func applySignal(_ signal: String) throws {
@@ -48,6 +50,7 @@ final class StateStore {
             var state = readSessionState()
             let now = Date().timeIntervalSince1970
             pruneSessions(&state.sessions, now: now)
+            let previousRecord = state.sessions[sessionKey]
 
             if sessionEndSignals.contains(signalName) {
                 state.sessions.removeValue(forKey: sessionKey)
@@ -70,9 +73,22 @@ final class StateStore {
                 )
             }
 
-            let aggregate = aggregateSessions(state.sessions)
+            let aggregate = aggregateSessions(state.sessions, now: now, leasePolicy: leasePolicy)
+            let historyRecord = state.sessions[sessionKey] ?? previousRecord
             try writeJSON(state, to: sessionFile)
-            try writeCurrentStatus(aggregate)
+            try SignalLightStateFiles.appendHistoryEntry(
+                SignalHistoryEntry(
+                    recordedAt: now,
+                    sessionKey: historySessionKey(sessionKey),
+                    signal: signalName,
+                    aggregate: aggregate,
+                    source: historyRecord?.source ?? source,
+                    model: historyRecord?.model ?? model
+                ),
+                in: stateDir,
+                now: now
+            )
+            try writeCurrentStatus(aggregate, updatedAt: now)
             return aggregate
         }
     }
@@ -90,7 +106,7 @@ final class StateStore {
 
         var state = readSessionState()
         pruneSessions(&state.sessions, now: Date().timeIntervalSince1970)
-        let aggregate = aggregateSessions(state.sessions)
+        let aggregate = aggregateSessions(state.sessions, leasePolicy: leasePolicy)
         let payload: [String: Any] = [
             "aggregate": aggregate,
             "sessions": state.sessions.mapValues { record in
@@ -122,8 +138,8 @@ final class StateStore {
         return try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
     }
 
-    private func writeCurrentStatus(_ signal: String) throws {
-        try SignalLightStateFiles.writeCurrentStatus(signal, in: stateDir)
+    private func writeCurrentStatus(_ signal: String, updatedAt: Double = Date().timeIntervalSince1970) throws {
+        try SignalLightStateFiles.writeCurrentStatus(signal, in: stateDir, updatedAt: updatedAt)
         notifyStatusChanged()
     }
 
@@ -166,13 +182,26 @@ final class StateStore {
     }
 
     private func pruneSessions(_ sessions: inout [String: SessionRecord], now: Double) {
-        pruneExpiredSessions(&sessions, now: now, sessionTTL: sessionTTL)
+        pruneExpiredSessions(
+            &sessions,
+            now: now,
+            sessionTTL: sessionTTL,
+            leasePolicy: leasePolicy
+        )
     }
 
     private func writeJSON<T: Encodable>(_ payload: T, to url: URL) throws {
         try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
         let data = try JSONEncoder.prettySignalEncoder.encode(payload)
         try data.write(to: url, options: .atomic)
+    }
+
+    /// cwd fallback 会携带本地路径，历史中只保留不含路径的真实会话标识。
+    private func historySessionKey(_ value: String) -> String? {
+        if value.hasPrefix("cwd:") || value.contains("/") || value.contains("\\") {
+            return nil
+        }
+        return value
     }
 
     private func withLock<T>(_ work: () throws -> T) throws -> T {
